@@ -29,6 +29,7 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -117,15 +118,26 @@ fun NotebooksScreen(
             }
         }
 
-        ExtendedFloatingActionButton(
-            onClick = onNewNote,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            shape = RoundedCornerShape(18.dp),
-            icon = { Icon(Icons.Outlined.Add, contentDescription = null) },
-            text = { Text("Yeni not", fontWeight = FontWeight.Bold) },
-        )
+        Row(
+            Modifier.align(Alignment.BottomEnd).padding(20.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FloatingActionButton(
+                onClick = onAssistant,
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.primary,
+                shape = RoundedCornerShape(18.dp),
+            ) { Icon(Icons.Outlined.AutoAwesome, contentDescription = "Asistan") }
+            ExtendedFloatingActionButton(
+                onClick = onNewNote,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                shape = RoundedCornerShape(18.dp),
+                icon = { Icon(Icons.Outlined.Add, contentDescription = null) },
+                text = { Text("Yeni not", fontWeight = FontWeight.Bold) },
+            )
+        }
     }
 
     if (showNew) NewNotebookDialog(onDismiss = { showNew = false }) { name ->
@@ -152,9 +164,6 @@ private fun Header(onAssistant: () -> Unit, onSettings: () -> Unit) {
             fontWeight = FontWeight.ExtraBold,
             color = MaterialTheme.colorScheme.primary,
         )
-        IconButton(onClick = onAssistant) {
-            Icon(Icons.Outlined.AutoAwesome, contentDescription = "Asistan", tint = MaterialTheme.colorScheme.primary)
-        }
         IconButton(onClick = onSettings) {
             Icon(Icons.Outlined.Settings, contentDescription = "Ayarlar", tint = MaterialTheme.colorScheme.onBackground)
         }
