@@ -10,6 +10,8 @@ import androidx.lifecycle.viewModelScope
 import com.codepad.app.ai.ChatMessage
 import com.codepad.app.ai.GeminiClient
 import com.codepad.app.data.AiAction
+import com.codepad.app.data.ChatSession
+import com.codepad.app.data.SavedMessage
 import com.codepad.app.data.AppDatabase
 import com.codepad.app.data.DefaultActions
 import com.codepad.app.data.Note
@@ -52,6 +54,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun notesIn(notebookId: Long) = dao.notesIn(notebookId)
     fun cardsFor(noteId: Long) = dao.cardsFor(noteId)
 
+    val sessions: StateFlow<List<ChatSession>> =
+        dao.sessions().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     var apiKey by mutableStateOf(settings.apiKey)
         private set
     var model by mutableStateOf(settings.model)
@@ -66,6 +71,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     val chat = mutableStateListOf<ChatMessage>()
     var chatBusy by mutableStateOf(false)
+        private set
+    var currentSessionId by mutableStateOf<Long?>(null)
         private set
 
     init {
@@ -166,6 +173,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         chat += ChatMessage("user", question)
         chatBusy = true
         viewModelScope.launch {
+            // Sohbet yoksa yeni bir oturum aç; her mesajı veritabanına yaz.
+            val sid = currentSessionId
+                ?: dao.insertSession(ChatSession(title = question.trim().take(40))).also { currentSessionId = it }
+            dao.insertMessage(SavedMessage(sessionId = sid, role = "user", text = question))
+
             val all = dao.allNotes()
             val pool = if (notebookId == null) all else all.filter { it.notebookId == notebookId }
             val context = relevantNotes(question, pool)
@@ -178,12 +190,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 context.forEach { append("### ${it.title.ifBlank { "Başlıksız" }}\n${it.content.take(1_500)}\n\n") }
             }
             val result = GeminiClient.generate(apiKey, model, system, chat.toList())
-            chat += ChatMessage("model", result.getOrElse { "Hata: ${it.message}" })
+            val reply = result.getOrElse { "Hata: ${it.message}" }
+            chat += ChatMessage("model", reply)
+            dao.insertMessage(SavedMessage(sessionId = sid, role = "model", text = reply))
             chatBusy = false
         }
     }
 
-    fun clearChat() = chat.clear()
+    /** Yeni bir sohbet başlatır; önceki sohbet geçmişte kalır. */
+    fun newSession() {
+        currentSessionId = null
+        chat.clear()
+    }
+
+    /** Geçmişteki bir sohbeti yükler. */
+    fun openSession(id: Long) = viewModelScope.launch {
+        val msgs = dao.messagesOf(id)
+        chat.clear()
+        msgs.forEach { chat += ChatMessage(it.role, it.text) }
+        currentSessionId = id
+    }
+
+    fun deleteSession(id: Long) = viewModelScope.launch {
+        dao.deleteSession(id)
+        if (currentSessionId == id) newSession()
+    }
 
     /** Basit anahtar kelime puanlaması. Eşleşme yoksa en son güncellenen notlara bakar. */
     private fun relevantNotes(query: String, notes: List<Note>): List<Note> {

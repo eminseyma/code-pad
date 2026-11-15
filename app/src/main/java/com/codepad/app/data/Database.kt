@@ -68,6 +68,35 @@ data class NoteCard(
     val createdAt: Long = System.currentTimeMillis(),
 )
 
+/** Asistan sohbeti. */
+@Entity(tableName = "chat_sessions")
+data class ChatSession(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+/** Sohbetteki tek bir mesaj. role: "user" veya "model". */
+@Entity(
+    tableName = "chat_messages",
+    foreignKeys = [
+        ForeignKey(
+            entity = ChatSession::class,
+            parentColumns = ["id"],
+            childColumns = ["sessionId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index("sessionId")],
+)
+data class SavedMessage(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val sessionId: Long,
+    val role: String,
+    val text: String,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
 data class NotebookCount(val notebookId: Long, val count: Int)
 
 @Dao
@@ -116,6 +145,21 @@ interface NoteDao {
 
     @Delete
     suspend fun deleteCard(card: NoteCard)
+
+    @Query("SELECT * FROM chat_sessions ORDER BY createdAt DESC")
+    fun sessions(): Flow<List<ChatSession>>
+
+    @Insert
+    suspend fun insertSession(session: ChatSession): Long
+
+    @Query("DELETE FROM chat_sessions WHERE id = :id")
+    suspend fun deleteSession(id: Long)
+
+    @Query("SELECT * FROM chat_messages WHERE sessionId = :sessionId ORDER BY id")
+    suspend fun messagesOf(sessionId: Long): List<SavedMessage>
+
+    @Insert
+    suspend fun insertMessage(message: SavedMessage): Long
 }
 
 /** v1 -> v2: not kartları tablosu. Mevcut notlar korunur. */
@@ -135,7 +179,33 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
-@Database(entities = [Notebook::class, Note::class, NoteCard::class], version = 2, exportSchema = false)
+/** v2 -> v3: sohbet geçmişi tabloları. */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `chat_sessions` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`title` TEXT NOT NULL, " +
+                "`createdAt` INTEGER NOT NULL)",
+        )
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `chat_messages` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`sessionId` INTEGER NOT NULL, " +
+                "`role` TEXT NOT NULL, " +
+                "`text` TEXT NOT NULL, " +
+                "`createdAt` INTEGER NOT NULL, " +
+                "FOREIGN KEY(`sessionId`) REFERENCES `chat_sessions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)",
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_chat_messages_sessionId` ON `chat_messages` (`sessionId`)")
+    }
+}
+
+@Database(
+    entities = [Notebook::class, Note::class, NoteCard::class, ChatSession::class, SavedMessage::class],
+    version = 3,
+    exportSchema = false,
+)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): NoteDao
 
@@ -148,7 +218,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "codepad.db",
-                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
             }
     }
 }

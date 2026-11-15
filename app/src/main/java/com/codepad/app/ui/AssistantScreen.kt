@@ -8,11 +8,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Send
-import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.codepad.app.AppViewModel
 
 private val Suggestions = listOf(
@@ -29,9 +32,14 @@ private val Suggestions = listOf(
     "Notlarımdaki kodlardan bir quiz hazırla",
 )
 
+private fun formatDate(ms: Long): String =
+    java.text.SimpleDateFormat("dd.MM.yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date(ms))
+
 @Composable
 fun AssistantScreen(vm: AppViewModel, onBack: () -> Unit) {
     var input by remember { mutableStateOf("") }
+    var showHistory by remember { mutableStateOf(false) }
+    val sessions by vm.sessions.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     val messages = vm.chat
 
@@ -57,9 +65,8 @@ fun AssistantScreen(vm: AppViewModel, onBack: () -> Unit) {
                 fontWeight = FontWeight.ExtraBold,
                 color = MaterialTheme.colorScheme.primary,
             )
-            if (messages.isNotEmpty()) {
-                IconButton(onClick = { vm.clearChat() }) { Icon(Icons.Outlined.Delete, contentDescription = "Sohbeti temizle") }
-            }
+            TextButton(onClick = { showHistory = true }) { Text("Geçmiş", fontWeight = FontWeight.Bold) }
+            IconButton(onClick = { vm.newSession() }) { Icon(Icons.Outlined.Add, contentDescription = "Yeni sohbet") }
         }
 
         LazyColumn(
@@ -71,7 +78,7 @@ fun AssistantScreen(vm: AppViewModel, onBack: () -> Unit) {
             if (messages.isEmpty()) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Notlarına dayanarak soru sorabilirsin.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Notlarına dayanarak soru sorabilirsin. Sohbetlerin kaydedilir, 'Geçmiş'ten açabilirsin.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Suggestions.forEach { s ->
                             Box(
                                 Modifier
@@ -134,5 +141,41 @@ fun AssistantScreen(vm: AppViewModel, onBack: () -> Unit) {
                 ),
             ) { Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = "Gönder") }
         }
+    }
+
+    if (showHistory) {
+        AlertDialog(
+            onDismissRequest = { showHistory = false },
+            title = { Text("Sohbet geçmişi") },
+            text = {
+                if (sessions.isEmpty()) {
+                    Text("Henüz kayıtlı sohbet yok.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    Column(
+                        Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        sessions.forEach { s ->
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(
+                                    Modifier
+                                        .weight(1f)
+                                        .clickable {
+                                            vm.openSession(s.id)
+                                            showHistory = false
+                                        }
+                                        .padding(vertical = 8.dp),
+                                ) {
+                                    Text(s.title, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                    Text(formatDate(s.createdAt), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                TextButton(onClick = { vm.deleteSession(s.id) }) { Text("Sil") }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showHistory = false }) { Text("Kapat") } },
+        )
     }
 }
