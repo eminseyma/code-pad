@@ -118,7 +118,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         model = settings.model
     }
 
-    fun setTheme(choice: ThemeChoice) {
+    fun changeTheme(choice: ThemeChoice) {
         settings.theme = choice
         theme = choice
     }

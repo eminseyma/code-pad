@@ -58,7 +58,7 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                 ThemeChoice.entries.forEach { choice ->
                     FilterChip(
                         selected = vm.theme == choice,
-                        onClick = { vm.setTheme(choice) },
+                        onClick = { vm.changeTheme(choice) },
                         label = { Text(themeLabel(choice)) },
                     )
                 }
