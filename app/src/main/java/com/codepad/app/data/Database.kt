@@ -12,7 +12,10 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.Update
 import androidx.room.Upsert
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "notebooks")
@@ -41,6 +44,28 @@ data class Note(
     val title: String = "",
     val content: String = "",
     val updatedAt: Long = System.currentTimeMillis(),
+)
+
+/** Nottaki AI kartı. section boşsa "bölümsüz" demektir. */
+@Entity(
+    tableName = "note_cards",
+    foreignKeys = [
+        ForeignKey(
+            entity = Note::class,
+            parentColumns = ["id"],
+            childColumns = ["noteId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index("noteId")],
+)
+data class NoteCard(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val noteId: Long,
+    val section: String = "",
+    val title: String,
+    val body: String,
+    val createdAt: Long = System.currentTimeMillis(),
 )
 
 data class NotebookCount(val notebookId: Long, val count: Int)
@@ -79,9 +104,38 @@ interface NoteDao {
 
     @Delete
     suspend fun deleteNote(note: Note)
+
+    @Query("SELECT * FROM note_cards WHERE noteId = :noteId ORDER BY createdAt")
+    fun cardsFor(noteId: Long): Flow<List<NoteCard>>
+
+    @Insert
+    suspend fun insertCard(card: NoteCard): Long
+
+    @Update
+    suspend fun updateCard(card: NoteCard)
+
+    @Delete
+    suspend fun deleteCard(card: NoteCard)
 }
 
-@Database(entities = [Notebook::class, Note::class], version = 1, exportSchema = false)
+/** v1 -> v2: not kartları tablosu. Mevcut notlar korunur. */
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `note_cards` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`noteId` INTEGER NOT NULL, " +
+                "`section` TEXT NOT NULL, " +
+                "`title` TEXT NOT NULL, " +
+                "`body` TEXT NOT NULL, " +
+                "`createdAt` INTEGER NOT NULL, " +
+                "FOREIGN KEY(`noteId`) REFERENCES `notes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)",
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_note_cards_noteId` ON `note_cards` (`noteId`)")
+    }
+}
+
+@Database(entities = [Notebook::class, Note::class, NoteCard::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): NoteDao
 
@@ -94,7 +148,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "codepad.db",
-                ).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
             }
     }
 }

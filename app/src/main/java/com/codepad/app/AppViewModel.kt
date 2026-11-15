@@ -9,27 +9,29 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.codepad.app.ai.ChatMessage
 import com.codepad.app.ai.GeminiClient
+import com.codepad.app.data.AiAction
 import com.codepad.app.data.AppDatabase
+import com.codepad.app.data.DefaultActions
 import com.codepad.app.data.Note
+import com.codepad.app.data.NoteCard
 import com.codepad.app.data.Notebook
 import com.codepad.app.data.SettingsStore
+import com.codepad.app.data.ThemeChoice
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-enum class AiAction(val label: String, val instruction: String) {
-    EXPLAIN("Açıkla", "Aşağıdaki notu, bir yazılım öğrencisine anlatır gibi sade Türkçe ile açıkla. Kısa ol."),
-    SUMMARIZE("Özetle", "Aşağıdaki notu en fazla 5 maddede özetle."),
-    EXAMPLE("Örnek ekle", "Aşağıdaki notun konusuna uygun, kısa ve çalışır bir kod örneği ekle. Kodu markdown kod bloğu içinde ver, kısa bir açıklama yaz."),
-    BUGS("Hata bul", "Aşağıdaki notta (özellikle kod bloklarında) hata, eksik ya da yanlış bilgi var mı? Varsa düzeltmesiyle birlikte kısaca açıkla."),
-}
+private const val SYSTEM = "Sen Code Pad adlı yazılım not uygulamasının asistanısın. Türkçe, kısa ve net yanıt ver. "
+
+/** Bir AI işleminin sonucu. excerpt, kaynak metnin başıdır (kart başlığında kullanılır). */
+data class AiResult(val label: String, val excerpt: String, val text: String)
 
 sealed interface AiState {
     data object Idle : AiState
     data object Loading : AiState
-    data class Done(val text: String) : AiState
+    data class Done(val result: AiResult) : AiState
     data class Failed(val message: String) : AiState
 }
 
@@ -48,10 +50,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         dao.allNotesFlow().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun notesIn(notebookId: Long) = dao.notesIn(notebookId)
+    fun cardsFor(noteId: Long) = dao.cardsFor(noteId)
 
     var apiKey by mutableStateOf(settings.apiKey)
         private set
     var model by mutableStateOf(settings.model)
+        private set
+    var theme by mutableStateOf(settings.theme)
+        private set
+    var actions by mutableStateOf(settings.actions())
         private set
 
     var aiState by mutableStateOf<AiState>(AiState.Idle)
@@ -77,7 +84,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Boş bir not oluşturur ve id'sini döndürür. */
     suspend fun createNote(notebookId: Long?): Long {
-        val target = notebookId ?: notebooks.value.firstOrNull()?.id ?: dao.insertNotebook(Notebook(name = "Genel Notlar"))
+        val target = notebookId ?: notebooks.value.firstOrNull()?.id
+            ?: dao.insertNotebook(Notebook(name = "Genel Notlar"))
         return dao.upsertNote(Note(notebookId = target))
     }
 
@@ -89,6 +97,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteNote(note: Note) = viewModelScope.launch { dao.deleteNote(note) }
 
+    // ---- Not kartları ----
+
+    fun addCard(noteId: Long, title: String, body: String, section: String = "") = viewModelScope.launch {
+        dao.insertCard(NoteCard(noteId = noteId, title = title, body = body, section = section.trim()))
+    }
+
+    fun moveCard(card: NoteCard, section: String) = viewModelScope.launch {
+        dao.updateCard(card.copy(section = section.trim()))
+    }
+
+    fun deleteCard(card: NoteCard) = viewModelScope.launch { dao.deleteCard(card) }
+
     // ---- Ayarlar ----
 
     fun saveSettings(newKey: String, newModel: String) {
@@ -98,18 +118,40 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         model = settings.model
     }
 
-    // ---- AI: not üzerinde eylemler ----
+    fun setTheme(choice: ThemeChoice) {
+        settings.theme = choice
+        theme = choice
+    }
 
-    fun runAction(action: AiAction, title: String, content: String) {
+    fun saveActions(list: List<AiAction>) {
+        settings.saveActions(list)
+        actions = list
+    }
+
+    fun resetActions() = saveActions(DefaultActions)
+
+    // ---- AI ----
+
+    /**
+     * Verilen metne bir yönerge uygular. input seçili metin ya da tüm nottur.
+     * excerpt, kart başlığında gösterilecek kısa alıntıdır.
+     */
+    fun runAi(label: String, instruction: String, input: String, excerpt: String) {
+        if (input.isBlank()) {
+            aiState = AiState.Failed("Önce bir metin seç ya da nota bir şey yaz.")
+            return
+        }
         aiState = AiState.Loading
         viewModelScope.launch {
-            val prompt = "Not başlığı: $title\n\n$content"
             val result = GeminiClient.generate(
                 apiKey, model,
-                "Sen Code Pad adlı yazılım not uygulamasının asistanısın. Türkçe, kısa ve net yanıt ver. ${action.instruction}",
-                listOf(ChatMessage("user", prompt)),
+                SYSTEM + instruction,
+                listOf(ChatMessage("user", input)),
             )
-            aiState = result.fold({ AiState.Done(it) }, { AiState.Failed(it.message ?: "Bilinmeyen hata") })
+            aiState = result.fold(
+                { AiState.Done(AiResult(label, excerpt, it)) },
+                { AiState.Failed(it.message ?: "Bilinmeyen hata") },
+            )
         }
     }
 
@@ -117,17 +159,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         aiState = AiState.Idle
     }
 
-    // ---- AI: notlarla sohbet ----
+    // ---- Asistan: notlarla sohbet ----
 
     fun ask(question: String, notebookId: Long? = null) {
         if (question.isBlank() || chatBusy) return
         chat += ChatMessage("user", question)
         chatBusy = true
         viewModelScope.launch {
-            val pool = dao.allNotes().let { all -> if (notebookId == null) all else all.filter { it.notebookId == notebookId } }
+            val all = dao.allNotes()
+            val pool = if (notebookId == null) all else all.filter { it.notebookId == notebookId }
             val context = relevantNotes(question, pool)
             val system = buildString {
-                append("Sen Code Pad adlı yazılım not uygulamasının asistanısın. Türkçe yanıt ver. ")
+                append(SYSTEM)
                 append("Önce kullanıcının notlarına dayan; notlarda yoksa bunu söyle, sonra genel bilginle tamamla. ")
                 append("Hangi notlardan yararlandığını sonda 'Kaynak:' satırında not başlıklarıyla belirt.\n\n")
                 append("KULLANICI NOTLARI:\n")
@@ -142,10 +185,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearChat() = chat.clear()
 
-    /** Basit anahtar kelime puanlaması; ileride gömme (embedding) ile değiştirilebilir. */
+    /** Basit anahtar kelime puanlaması. Eşleşme yoksa en son güncellenen notlara bakar. */
     private fun relevantNotes(query: String, notes: List<Note>): List<Note> {
         val words = query.lowercase().split(Regex("\\W+")).filter { it.length > 2 }
-        if (words.isEmpty()) return notes.take(5)
+        if (words.isEmpty()) return notes.sortedByDescending { it.updatedAt }.take(5)
         val ranked = notes
             .map { n ->
                 val title = n.title.lowercase()
@@ -156,7 +199,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             .sortedByDescending { it.second }
             .take(5)
             .map { it.first }
-        // Eşleşme yoksa (ör. "genel özet çıkar") en son güncellenen notlara bak.
         return ranked.ifEmpty { notes.sortedByDescending { it.updatedAt }.take(5) }
     }
 }

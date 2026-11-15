@@ -15,15 +15,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
@@ -35,8 +38,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,12 +59,15 @@ fun NotebooksScreen(
     onOpenNotebook: (Long) -> Unit,
     onOpenNote: (Long) -> Unit,
     onNewNote: () -> Unit,
+    onAssistant: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     val notebooks by vm.notebooks.collectAsStateWithLifecycle()
     val counts by vm.noteCounts.collectAsStateWithLifecycle()
     val notes by vm.allNotes.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var showNew by remember { mutableStateOf(false) }
+    val tints = tileTints()
 
     val shown = if (query.isBlank()) notes.take(5)
     else notes.filter { it.title.contains(query, true) || it.content.contains(query, true) }
@@ -69,20 +75,10 @@ fun NotebooksScreen(
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 100.dp),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 100.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Box(
-                        Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)).background(Mint),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Outlined.Code, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
-                    }
-                    Text("Code Pad", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = Forest)
-                }
-            }
+            item { Header(onAssistant = onAssistant, onSettings = onSettings) }
             item {
                 OutlinedTextField(
                     value = query,
@@ -100,7 +96,7 @@ fun NotebooksScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         row.forEach { nb ->
                             if (nb == null) NewNotebookTile(Modifier.weight(1f)) { showNew = true }
-                            else NotebookTile(nb, counts[nb.id] ?: 0, Modifier.weight(1f)) { onOpenNotebook(nb.id) }
+                            else NotebookTile(nb, counts[nb.id] ?: 0, tints, Modifier.weight(1f)) { onOpenNotebook(nb.id) }
                         }
                         if (row.size == 1) Spacer(Modifier.weight(1f))
                     }
@@ -114,7 +110,7 @@ fun NotebooksScreen(
                 )
             }
             if (shown.isEmpty()) {
-                item { Text("Henüz not yok. Sağ alttan ilk notunu ekle.", color = Muted) }
+                item { Text("Henüz not yok. Sağ alttan ilk notunu ekle.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             items(shown, key = { it.id }) { note ->
                 NoteRow(note, notebooks.firstOrNull { it.id == note.notebookId }?.name.orEmpty()) { onOpenNote(note.id) }
@@ -124,8 +120,8 @@ fun NotebooksScreen(
         ExtendedFloatingActionButton(
             onClick = onNewNote,
             modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
-            containerColor = Green,
-            contentColor = androidx.compose.ui.graphics.Color.White,
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
             shape = RoundedCornerShape(18.dp),
             icon = { Icon(Icons.Outlined.Add, contentDescription = null) },
             text = { Text("Yeni not", fontWeight = FontWeight.Bold) },
@@ -138,19 +134,46 @@ fun NotebooksScreen(
     }
 }
 
+/** Üst çubuk: solda uygulama adı, sağda Asistan ve Ayarlar. */
 @Composable
-private fun NotebookTile(nb: Notebook, count: Int, modifier: Modifier, onClick: () -> Unit) {
+private fun Header(onAssistant: () -> Unit, onSettings: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)).background(Mint),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Outlined.Code, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.width(10.dp))
+        Text(
+            "Code Pad",
+            modifier = Modifier.weight(1f),
+            fontSize = 22.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        IconButton(onClick = onAssistant) {
+            Icon(Icons.Outlined.AutoAwesome, contentDescription = "Asistan", tint = MaterialTheme.colorScheme.primary)
+        }
+        IconButton(onClick = onSettings) {
+            Icon(Icons.Outlined.Settings, contentDescription = "Ayarlar", tint = MaterialTheme.colorScheme.onBackground)
+        }
+    }
+}
+
+@Composable
+private fun NotebookTile(nb: Notebook, count: Int, tints: List<androidx.compose.ui.graphics.Color>, modifier: Modifier, onClick: () -> Unit) {
     Column(
         modifier
             .height(88.dp)
             .clip(RoundedCornerShape(18.dp))
-            .background(NotebookTints[nb.colorIndex.mod(NotebookTints.size)])
+            .background(tints[nb.colorIndex.mod(tints.size)])
             .clickable(onClick = onClick)
             .padding(14.dp),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(nb.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Forest, maxLines = 2)
-        Text("$count not", fontSize = 12.sp, color = Muted)
+        Text(nb.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground, maxLines = 2)
+        Text("$count not", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -164,7 +187,7 @@ private fun NewNotebookTile(modifier: Modifier, onClick: () -> Unit) {
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text("+ Yeni defter", color = Green, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+        Text("+ Yeni defter", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
     }
 }
 
@@ -175,8 +198,8 @@ fun NoteRow(note: Note, notebookName: String, onClick: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(androidx.compose.ui.graphics.Color.White)
-            .border(BorderStroke(1.dp, Line), RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -195,7 +218,7 @@ fun NoteRow(note: Note, notebookName: String, onClick: () -> Unit) {
                 fontSize = 14.sp,
                 maxLines = 1,
             )
-            Text(notebookName, fontSize = 12.sp, color = Muted, maxLines = 1)
+            Text(notebookName, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
     }
 }
@@ -241,7 +264,7 @@ fun NotebookScreen(
                     modifier = Modifier.weight(1f),
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 20.sp,
-                    color = Forest,
+                    color = MaterialTheme.colorScheme.primary,
                     maxLines = 1,
                 )
                 IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Outlined.Delete, contentDescription = "Defteri sil") }
@@ -250,15 +273,15 @@ fun NotebookScreen(
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 100.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                if (notes.isEmpty()) item { Text("Bu defterde henüz not yok.", color = Muted) }
+                if (notes.isEmpty()) item { Text("Bu defterde henüz not yok.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 items(notes, key = { it.id }) { note -> NoteRow(note, "", onClick = { onOpenNote(note.id) }) }
             }
         }
         ExtendedFloatingActionButton(
             onClick = onNewNote,
             modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
-            containerColor = Green,
-            contentColor = androidx.compose.ui.graphics.Color.White,
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
             shape = RoundedCornerShape(18.dp),
             icon = { Icon(Icons.Outlined.Add, contentDescription = null) },
             text = { Text("Yeni not", fontWeight = FontWeight.Bold) },

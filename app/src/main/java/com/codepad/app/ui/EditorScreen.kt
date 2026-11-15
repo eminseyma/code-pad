@@ -1,21 +1,13 @@
 package com.codepad.app.ui
 
+import android.content.Intent
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -26,56 +18,52 @@ import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FormatBold
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Title
 import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.codepad.app.AiAction
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.codepad.app.AiResult
 import com.codepad.app.AiState
 import com.codepad.app.AppViewModel
+import com.codepad.app.data.AiAction
 import com.codepad.app.data.Note
+import com.codepad.app.data.NoteCard
 import kotlinx.coroutines.delay
 
-private fun TextFieldValue.insert(text: String, cursorBack: Int = 0): TextFieldValue {
-    val s = selection.min
-    val e = selection.max
-    val newText = this.text.replaceRange(s, e, text)
-    return TextFieldValue(newText, TextRange(s + text.length - cursorBack))
+/** İmleç/seçim yerine metin koyar. cursorBack > 0 ise imleci geriye alır. */
+private fun TextFieldValue.replaceSel(s: String, cursorBack: Int = 0): TextFieldValue {
+    val a = selection.min
+    val b = selection.max
+    val newText = text.replaceRange(a, b, s)
+    return TextFieldValue(newText, TextRange(a + s.length - cursorBack))
 }
 
 @Composable
 fun EditorScreen(vm: AppViewModel, noteId: Long, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val cards by remember(noteId) { vm.cardsFor(noteId) }.collectAsStateWithLifecycle(emptyList())
+
     var note by remember { mutableStateOf<Note?>(null) }
     var title by remember { mutableStateOf("") }
     var content by remember { mutableStateOf(TextFieldValue("")) }
     var loaded by remember { mutableStateOf(false) }
     var preview by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var showCustom by remember { mutableStateOf(false) }
+    var movingCard by remember { mutableStateOf<NoteCard?>(null) }
 
     LaunchedEffect(noteId) {
         vm.loadNote(noteId)?.let {
@@ -107,10 +95,46 @@ fun EditorScreen(vm: AppViewModel, noteId: Long, onBack: () -> Unit) {
     }
     BackHandler(onBack = ::leave)
 
+    // Seçim varsa yalnızca seçili metne, yoksa tüm nota uygulanır.
+    val selection = content.selection
+    val selectedText = if (selection.collapsed) "" else content.text.substring(selection.min, selection.max)
+    val inputText = selectedText.ifBlank { content.text }
+    val excerpt = inputText.trim().lineSequence().firstOrNull().orEmpty().take(40)
+
+    fun runAction(action: AiAction) = vm.runAi(action.label, action.instruction, inputText, excerpt)
+
+    fun edit(s: String, back: Int = 0) {
+        content = content.replaceSel(s, back)
+    }
+
+    fun appendToNote(s: String) {
+        content = TextFieldValue(content.text.trimEnd() + "\n\n" + s + "\n")
+    }
+
+    fun share() {
+        val body = buildString {
+            append(title.ifBlank { "Not" }).append("\n\n").append(content.text)
+            cards.groupBy { it.section }.forEach { (section, list) ->
+                append("\n\n")
+                if (section.isNotBlank()) append("## ").append(section).append("\n")
+                list.forEach { append("\n### ").append(it.title).append("\n").append(it.body).append("\n") }
+            }
+        }
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, body)
+        }
+        context.startActivity(Intent.createChooser(intent, "Notu paylaş"))
+    }
+
     Column(Modifier.fillMaxSize().imePadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = ::leave) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Geri") }
-            Row(Modifier.weight(1f)) {}
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = { leave() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Geri") }
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = { share() }) { Icon(Icons.Outlined.Share, contentDescription = "Paylaş") }
             IconButton(onClick = { preview = !preview }) {
                 Icon(
                     if (preview) Icons.Outlined.Edit else Icons.Outlined.Visibility,
@@ -122,17 +146,20 @@ fun EditorScreen(vm: AppViewModel, noteId: Long, onBack: () -> Unit) {
 
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
             val transparent = TextFieldDefaults.colors(
-                focusedContainerColor = Color.Transparent,
-                unfocusedContainerColor = Color.Transparent,
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent,
+                focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
             )
             TextField(
                 value = title,
                 onValueChange = { title = it },
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("Başlık", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold) },
-                textStyle = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold, color = Ink),
+                textStyle = MaterialTheme.typography.headlineSmall.copy(
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                ),
                 colors = transparent,
             )
             if (preview) {
@@ -141,48 +168,126 @@ fun EditorScreen(vm: AppViewModel, noteId: Long, onBack: () -> Unit) {
                 TextField(
                     value = content,
                     onValueChange = { content = it },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 320.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 300.dp),
                     placeholder = { Text("Yaz… Kod için ``` ile blok aç ya da alttaki </> düğmesine bas.") },
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = Ink),
-                    keyboardOptions = KeyboardOptions.Default,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onBackground),
                     colors = transparent,
                 )
             }
+
+            if (cards.isNotEmpty()) {
+                Column(Modifier.fillMaxWidth().padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "Kartlar",
+                        modifier = Modifier.padding(start = 8.dp),
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 16.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    val groups = cards.groupBy { it.section }
+                        .toSortedMap(compareBy<String>({ it.isEmpty() }, { it }))
+                    groups.forEach { (section, list) ->
+                        Text(
+                            if (section.isBlank()) "Bölümsüz" else section,
+                            modifier = Modifier.padding(start = 8.dp, top = 6.dp),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        list.forEach { card ->
+                            CardItem(
+                                card = card,
+                                onAppend = { appendToNote(card.body) },
+                                onMove = { movingCard = card },
+                                onCopy = { clipboard.setText(AnnotatedString(card.body)) },
+                                onDelete = { vm.deleteCard(card) },
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
         }
 
-        // AI hızlı eylemleri
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            AiAction.entries.forEach { action ->
+        // AI eylemleri: seçim varsa seçili metne uygulanır.
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+            Text(
+                if (selectedText.isNotBlank()) "Seçili metne uygulanır" else "Tüm nota uygulanır",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                vm.actions.forEach { action ->
+                    AssistChip(
+                        onClick = { runAction(action) },
+                        label = { Text(action.label, fontWeight = FontWeight.Bold) },
+                        leadingIcon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            labelColor = MaterialTheme.colorScheme.primary,
+                            leadingIconContentColor = MaterialTheme.colorScheme.primary,
+                        ),
+                        border = AssistChipDefaults.assistChipBorder(enabled = true, borderColor = MaterialTheme.colorScheme.secondary),
+                    )
+                }
                 AssistChip(
-                    onClick = { vm.runAction(action, title, content.text) },
-                    label = { Text(action.label, fontWeight = FontWeight.Bold) },
-                    leadingIcon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                    onClick = { showCustom = true },
+                    label = { Text("Özel istek", fontWeight = FontWeight.Bold) },
                     shape = RoundedCornerShape(14.dp),
-                    colors = AssistChipDefaults.assistChipColors(containerColor = Color.White, labelColor = Forest, leadingIconContentColor = Green),
-                    border = AssistChipDefaults.assistChipBorder(enabled = true, borderColor = Mint),
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                    border = AssistChipDefaults.assistChipBorder(enabled = true, borderColor = MaterialTheme.colorScheme.outline),
                 )
             }
         }
 
-        HorizontalDivider(color = Line)
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
         Row(
-            Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 8.dp, vertical = 4.dp),
+            Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(horizontal = 8.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            ToolButton(Icons.Outlined.Title, "Başlık") { content = content.insert("## ") }
-            ToolButton(Icons.Outlined.FormatBold, "Kalın") { content = content.insert("****", cursorBack = 2) }
-            ToolButton(Icons.AutoMirrored.Outlined.FormatListBulleted, "Liste") { content = content.insert("- ") }
-            ToolButton(Icons.Outlined.CheckBoxOutlineBlank, "Yapılacak kutusu") { content = content.insert("- [ ] ") }
-            ToolButton(Icons.Outlined.Code, "Kod bloğu", highlighted = true) {
-                content = content.insert("```kotlin\n\n```\n", cursorBack = 5)
-            }
+            ToolButton(Icons.Outlined.Title, "Başlık") { edit("## ") }
+            ToolButton(Icons.Outlined.FormatBold, "Kalın") { edit("****", 2) }
+            ToolButton(Icons.AutoMirrored.Outlined.FormatListBulleted, "Liste") { edit("- ") }
+            ToolButton(Icons.Outlined.CheckBoxOutlineBlank, "Yapılacak kutusu") { edit("- [ ] ") }
+            ToolButton(Icons.Outlined.Code, "Kod bloğu", highlighted = true) { edit("```kotlin\n\n```\n", 5) }
         }
     }
 
-    AiResultDialog(vm, onAppend = { text -> content = TextFieldValue(content.text.trimEnd() + "\n\n---\n" + text + "\n") })
+    AiResultDialog(
+        vm = vm,
+        hasSelection = selectedText.isNotBlank(),
+        onAddCard = { r -> vm.addCard(noteId, "${r.label}: ${r.excerpt}", r.text) },
+        onAppend = { appendToNote(it) },
+        onReplace = { edit(it) },
+    )
+
+    if (showCustom) {
+        CustomPromptDialog(
+            onDismiss = { showCustom = false },
+            onRun = { prompt ->
+                vm.runAi("Özel istek", prompt, inputText, excerpt)
+                showCustom = false
+            },
+        )
+    }
+
+    movingCard?.let { card ->
+        MoveCardDialog(
+            existing = cards.map { it.section }.filter { it.isNotBlank() }.distinct(),
+            onDismiss = { movingCard = null },
+            onPick = { section ->
+                vm.moveCard(card, section)
+                movingCard = null
+            },
+        )
+    }
 
     if (confirmDelete) {
         AlertDialog(
@@ -201,6 +306,82 @@ fun EditorScreen(vm: AppViewModel, noteId: Long, onBack: () -> Unit) {
 }
 
 @Composable
+private fun CardItem(
+    card: NoteCard,
+    onAppend: () -> Unit,
+    onMove: () -> Unit,
+    onCopy: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(card.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+        NoteBody(card.body)
+        Row(Modifier.horizontalScroll(rememberScrollState())) {
+            TextButton(onClick = onAppend) { Text("Nota'ya ekle") }
+            TextButton(onClick = onMove) { Text("Bölüm") }
+            TextButton(onClick = onCopy) { Text("Kopyala") }
+            TextButton(onClick = onDelete) { Text("Sil") }
+        }
+    }
+}
+
+@Composable
+private fun MoveCardDialog(existing: List<String>, onDismiss: () -> Unit, onPick: (String) -> Unit) {
+    var newName by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Bölüme taşı") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { onPick("") }) { Text("Bölümsüz") }
+                existing.forEach { s -> TextButton(onClick = { onPick(s) }) { Text(s) } }
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    singleLine = true,
+                    placeholder = { Text("Yeni bölüm adı") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onPick(newName) }, enabled = newName.isNotBlank()) { Text("Oluştur ve taşı") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } },
+    )
+}
+
+@Composable
+private fun CustomPromptDialog(onDismiss: () -> Unit, onRun: (String) -> Unit) {
+    var prompt by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Özel istek") },
+        text = {
+            OutlinedTextField(
+                value = prompt,
+                onValueChange = { prompt = it },
+                minLines = 3,
+                placeholder = { Text("Örn. Bunu bir sınav sorusuna çevir") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onRun(prompt) }, enabled = prompt.isNotBlank()) { Text("Çalıştır") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } },
+    )
+}
+
+@Composable
 private fun ToolButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     description: String,
@@ -210,39 +391,55 @@ private fun ToolButton(
     IconButton(
         onClick = onClick,
         colors = IconButtonDefaults.iconButtonColors(
-            containerColor = if (highlighted) MintLight else Color.Transparent,
-            contentColor = if (highlighted) Forest else Muted,
+            containerColor = if (highlighted) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
+            contentColor = if (highlighted) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
         ),
     ) { Icon(icon, contentDescription = description) }
 }
 
 @Composable
-private fun AiResultDialog(vm: AppViewModel, onAppend: (String) -> Unit) {
+private fun AiResultDialog(
+    vm: AppViewModel,
+    hasSelection: Boolean,
+    onAddCard: (AiResult) -> Unit,
+    onAppend: (String) -> Unit,
+    onReplace: (String) -> Unit,
+) {
     when (val s = vm.aiState) {
         AiState.Idle -> Unit
         else -> AlertDialog(
-            onDismissRequest = vm::clearAi,
-            title = { Text("AI asistan") },
+            onDismissRequest = { vm.clearAi() },
+            title = { Text("AI sonucu") },
             text = {
-                when (s) {
-                    AiState.Loading -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 3.dp)
-                        Text("Düşünüyor…")
+                Column(
+                    Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    when (s) {
+                        AiState.Loading -> Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 3.dp)
+                            Text("Düşünüyor…")
+                        }
+                        is AiState.Done -> {
+                            Text(s.result.label, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                            NoteBody(s.result.text)
+                            Row(Modifier.horizontalScroll(rememberScrollState())) {
+                                TextButton(onClick = { onAppend(s.result.text); vm.clearAi() }) { Text("Nota ekle") }
+                                if (hasSelection) {
+                                    TextButton(onClick = { onReplace(s.result.text); vm.clearAi() }) { Text("Seçimin yerine koy") }
+                                }
+                                TextButton(onClick = { onAddCard(s.result); vm.clearAi() }) { Text("Karta ekle") }
+                            }
+                        }
+                        is AiState.Failed -> Text(s.message, color = MaterialTheme.colorScheme.error)
+                        AiState.Idle -> Unit
                     }
-                    is AiState.Done -> Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) { NoteBody(s.text) }
-                    is AiState.Failed -> Text(s.message, color = MaterialTheme.colorScheme.error)
-                    AiState.Idle -> Unit
                 }
             },
-            confirmButton = {
-                if (s is AiState.Done) {
-                    TextButton(onClick = {
-                        onAppend(s.text)
-                        vm.clearAi()
-                    }) { Text("Nota ekle") }
-                }
-            },
-            dismissButton = { TextButton(onClick = vm::clearAi) { Text("Kapat") } },
+            confirmButton = { TextButton(onClick = { vm.clearAi() }) { Text("Kapat") } },
         )
     }
 }

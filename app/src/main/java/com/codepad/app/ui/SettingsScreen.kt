@@ -1,75 +1,198 @@
 package com.codepad.app.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.codepad.app.AppViewModel
+import com.codepad.app.data.AiAction
+import com.codepad.app.data.ThemeChoice
+import java.util.UUID
+
+private fun themeLabel(t: ThemeChoice) = when (t) {
+    ThemeChoice.MINT -> "Nane"
+    ThemeChoice.WHITE -> "Beyaz"
+    ThemeChoice.BLACK -> "Siyah"
+}
 
 @Composable
-fun SettingsScreen(vm: AppViewModel) {
+private fun SectionTitle(text: String) {
+    Text(text, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
+}
+
+@Composable
+fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
     var key by remember { mutableStateOf(vm.apiKey) }
     var model by remember { mutableStateOf(vm.model) }
     var saved by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<AiAction?>(null) }
+    var creating by remember { mutableStateOf(false) }
 
-    Column(
-        Modifier.fillMaxSize().padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Text("Ayarlar", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = Forest)
-        Text("Gemini API", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-        Text(
-            "AI özellikleri için Google AI Studio'dan ücretsiz bir API anahtarı al (aistudio.google.com/apikey) ve buraya yapıştır. Anahtar yalnızca bu cihazda, şifreli olarak saklanır.",
-            color = Muted,
-            fontSize = 13.sp,
-        )
-        OutlinedTextField(
-            value = key,
-            onValueChange = { key = it; saved = false },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("API anahtarı") },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            shape = RoundedCornerShape(14.dp),
-        )
-        OutlinedTextField(
-            value = model,
-            onValueChange = { model = it; saved = false },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Model adı") },
-            supportingText = { Text("Google model adlarını güncelleyebilir; hata alırsan güncel adı gir.") },
-            singleLine = true,
-            shape = RoundedCornerShape(14.dp),
-        )
-        Button(
-            onClick = {
-                vm.saveSettings(key, model)
-                saved = true
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 4.dp, end = 8.dp, top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Geri") }
+            Text("Ayarlar", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+        }
+
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            SectionTitle("Görünüm")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ThemeChoice.entries.forEach { choice ->
+                    FilterChip(
+                        selected = vm.theme == choice,
+                        onClick = { vm.setTheme(choice) },
+                        label = { Text(themeLabel(choice)) },
+                    )
+                }
+            }
+
+            SectionTitle("Gemini API")
+            Text(
+                "AI özellikleri için Google AI Studio'dan ücretsiz bir API anahtarı al (aistudio.google.com/apikey) ve buraya yapıştır. Anahtar yalnızca bu cihazda, şifreli olarak saklanır.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp,
+            )
+            OutlinedTextField(
+                value = key,
+                onValueChange = { key = it; saved = false },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("API anahtarı") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                shape = RoundedCornerShape(14.dp),
+            )
+            OutlinedTextField(
+                value = model,
+                onValueChange = { model = it; saved = false },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Model adı") },
+                supportingText = { Text("Google model adlarını güncelleyebilir; hata alırsan güncel adı gir.") },
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp),
+            )
+            Button(
+                onClick = {
+                    vm.saveSettings(key, model)
+                    saved = true
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+            ) { Text(if (saved) "Kaydedildi" else "Kaydet", fontWeight = FontWeight.Bold) }
+
+            SectionTitle("AI eylemleri")
+            Text(
+                "Editörde görünen hızlı düğmeler. Değiştir, kısalt veya yenisini ekle. Metin, eylemin yönergesi olarak modele gider.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp,
+            )
+            vm.actions.forEach { action ->
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(action.label, fontWeight = FontWeight.Bold)
+                        Text(
+                            action.instruction,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                            maxLines = 2,
+                        )
+                    }
+                    IconButton(onClick = { editing = action }) { Icon(Icons.Outlined.Edit, contentDescription = "Düzenle") }
+                    IconButton(onClick = { vm.saveActions(vm.actions.filter { it.id != action.id }) }) {
+                        Icon(Icons.Outlined.Delete, contentDescription = "Sil")
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = { creating = true }) { Text("+ Yeni eylem") }
+                TextButton(onClick = { vm.resetActions() }) { Text("Varsayılanlara dön") }
+            }
+
+            Text(
+                "Not: AI kullandığında not içeriği Google'a gönderilir. Hassas bilgileri notlara yazmamaya dikkat et.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp,
+            )
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+
+    if (creating) {
+        ActionEditDialog(
+            initial = null,
+            onDismiss = { creating = false },
+            onSave = { label, instruction ->
+                vm.saveActions(vm.actions + AiAction(UUID.randomUUID().toString(), label, instruction))
+                creating = false
             },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Green),
-        ) { Text(if (saved) "Kaydedildi" else "Kaydet", fontWeight = FontWeight.Bold) }
-        Text(
-            "Not: AI kullandığında not içeriği Google'a gönderilir. Hassas bilgileri notlara yazmamaya dikkat et.",
-            color = Muted,
-            fontSize = 12.sp,
         )
     }
+
+    editing?.let { current ->
+        ActionEditDialog(
+            initial = current,
+            onDismiss = { editing = null },
+            onSave = { label, instruction ->
+                vm.saveActions(
+                    vm.actions.map { if (it.id == current.id) it.copy(label = label, instruction = instruction) else it },
+                )
+                editing = null
+            },
+        )
+    }
+}
+
+@Composable
+private fun ActionEditDialog(initial: AiAction?, onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
+    var label by remember { mutableStateOf(initial?.label.orEmpty()) }
+    var instruction by remember { mutableStateOf(initial?.instruction.orEmpty()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial == null) "Yeni AI eylemi" else "Eylemi düzenle") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = label,
+                    onValueChange = { label = it },
+                    singleLine = true,
+                    label = { Text("Düğme adı") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = instruction,
+                    onValueChange = { instruction = it },
+                    minLines = 3,
+                    label = { Text("Yönerge (ne yapsın?)") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(label.trim(), instruction.trim()) },
+                enabled = label.isNotBlank() && instruction.isNotBlank(),
+            ) { Text("Kaydet") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } },
+    )
 }
