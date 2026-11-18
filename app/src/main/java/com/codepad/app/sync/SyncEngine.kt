@@ -42,7 +42,7 @@ object SyncEngine {
 
     // ---------- Çekme ----------
 
-    private fun pull(dao: NoteDao, token: String, since: Long) {
+    private suspend fun pull(dao: NoteDao, token: String, since: Long) {
         // Defterler
         SupabaseClient.select(token, "notebooks", since).forEachObject { o ->
             val sid = o.getString("id")
@@ -118,7 +118,7 @@ object SyncEngine {
 
     // ---------- Gönderme ----------
 
-    private fun push(dao: NoteDao, token: String, since: Long) {
+    private suspend fun push(dao: NoteDao, token: String, since: Long) {
         val nbs = dao.allNotebooksOnce()
         val nbSync = nbs.associate { it.id to it.syncId }
         val changedNb = nbs.filter { it.updatedAt > since }
@@ -174,7 +174,7 @@ object SyncEngine {
         })
     }
 
-    private fun pushTombstones(dao: NoteDao, token: String) {
+    private suspend fun pushTombstones(dao: NoteDao, token: String) {
         val stones = dao.tombstones()
         if (stones.isEmpty()) return
         // Uzak tabloda NOT NULL alanlar için boş değer gönderiyoruz; satır zaten silinmiş işaretlenecek.
