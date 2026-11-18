@@ -18,6 +18,7 @@ import androidx.navigation.navArgument
 import com.codepad.app.ui.AssistantScreen
 import com.codepad.app.ui.CodePadTheme
 import com.codepad.app.ui.EditorScreen
+import com.codepad.app.ui.LoginScreen
 import com.codepad.app.ui.NotebookScreen
 import com.codepad.app.ui.NotebooksScreen
 import com.codepad.app.ui.SettingsScreen
@@ -41,7 +42,10 @@ fun CodePadApp(vm: AppViewModel) {
     val scope = rememberCoroutineScope()
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
-        NavHost(nav, startDestination = "notebooks", modifier = Modifier.padding(padding)) {
+        NavHost(nav, startDestination = if (vm.loggedIn) "notebooks" else "login", modifier = Modifier.padding(padding)) {
+            composable("login") {
+                LoginScreen(vm, onDone = { nav.navigate("notebooks") { popUpTo("login") { inclusive = true } } })
+            }
             composable("notebooks") {
                 NotebooksScreen(
                     vm,

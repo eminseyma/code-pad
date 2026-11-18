@@ -43,6 +43,43 @@ class SettingsStore(context: Context) {
             .getOrDefault(ThemeChoice.MINT)
         set(value) = prefs.edit().putString(KEY_THEME, value.name).apply()
 
+    // ---- Bulut oturumu ----
+    var accessToken: String
+        get() = prefs.getString(KEY_ACCESS, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_ACCESS, value).apply()
+
+    var refreshToken: String
+        get() = prefs.getString(KEY_REFRESH, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_REFRESH, value).apply()
+
+    var userId: String
+        get() = prefs.getString(KEY_USER, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_USER, value).apply()
+
+    var userEmail: String
+        get() = prefs.getString(KEY_EMAIL, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_EMAIL, value).apply()
+
+    /** Son başarılı senkronun başlangıç zamanı (ms). 0 ise her şey yeniden gönderilir. */
+    var lastSync: Long
+        get() = prefs.getLong(KEY_LAST_SYNC, 0L)
+        set(value) = prefs.edit().putLong(KEY_LAST_SYNC, value).apply()
+
+    val hasSession: Boolean get() = accessToken.isNotBlank() && userId.isNotBlank()
+
+    fun saveSession(s: com.codepad.app.sync.SupabaseClient.Session) {
+        // Farklı bir hesaba girildiyse tüm yerel kayıtlar yeniden gönderilsin diye senkron zamanını sıfırla.
+        if (s.userId != userId) lastSync = 0L
+        accessToken = s.accessToken
+        refreshToken = s.refreshToken
+        userId = s.userId
+        userEmail = s.email
+    }
+
+    fun clearSession() {
+        prefs.edit().remove(KEY_ACCESS).remove(KEY_REFRESH).remove(KEY_USER).remove(KEY_EMAIL).remove(KEY_LAST_SYNC).apply()
+    }
+
     fun actions(): List<AiAction> {
         val raw = prefs.getString(KEY_ACTIONS, null) ?: return DefaultActions
         return try {
@@ -69,6 +106,11 @@ class SettingsStore(context: Context) {
         private const val KEY_MODEL = "gemini_model"
         private const val KEY_THEME = "theme"
         private const val KEY_ACTIONS = "ai_actions"
+        private const val KEY_ACCESS = "sb_access"
+        private const val KEY_REFRESH = "sb_refresh"
+        private const val KEY_USER = "sb_user"
+        private const val KEY_EMAIL = "sb_email"
+        private const val KEY_LAST_SYNC = "sb_last_sync"
 
         // Google model adlarını zaman zaman günceller; ayarlardan değiştirilebilir.
         const val DEFAULT_MODEL = "gemini-3.6-flash"

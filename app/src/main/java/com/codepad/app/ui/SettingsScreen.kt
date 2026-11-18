@@ -71,6 +71,26 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            SectionTitle("Hesap ve senkron")
+            if (vm.loggedIn) {
+                Text(vm.userEmail, fontWeight = FontWeight.Bold)
+                Text(
+                    vm.syncStatus.ifBlank { "Henüz eşitlenmedi" },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { vm.syncNow() }, shape = RoundedCornerShape(14.dp)) { Text("Şimdi eşitle") }
+                    OutlinedButton(onClick = { vm.signOut() }, shape = RoundedCornerShape(14.dp)) { Text("Çıkış yap") }
+                }
+            } else {
+                Text(
+                    "Giriş yapılmadı. Notlar yalnızca bu telefonda duruyor.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                )
+            }
+
             SectionTitle("Görünüm")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ThemeChoice.entries.forEach { choice ->

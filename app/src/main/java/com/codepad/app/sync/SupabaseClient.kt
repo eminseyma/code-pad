@@ -16,7 +16,7 @@ object SupabaseClient {
 
     data class Session(val accessToken: String, val refreshToken: String, val userId: String, val email: String)
 
-    class ApiException(message: String) : Exception(message)
+    class ApiException(message: String, val code: Int = 0) : Exception(message)
 
     private fun call(
         method: String,
@@ -42,7 +42,7 @@ object SupabaseClient {
         val stream = if (code in 200..299) conn.inputStream else conn.errorStream
         val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
         conn.disconnect()
-        if (code !in 200..299) throw ApiException(friendlyError(text, code))
+        if (code !in 200..299) throw ApiException(friendlyError(text, code), code)
         return text
     }
 
@@ -79,6 +79,9 @@ object SupabaseClient {
 
     private fun parseSession(text: String): Session {
         val o = JSONObject(text)
+        if (!o.has("access_token")) {
+            throw ApiException("Hesap açıldı. Giriş yapmadan önce Supabase'de Confirm email seçeneğinin kapalı olması gerekiyor.")
+        }
         val user = o.getJSONObject("user")
         return Session(
             accessToken = o.getString("access_token"),

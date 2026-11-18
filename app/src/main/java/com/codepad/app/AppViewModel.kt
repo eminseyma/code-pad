@@ -29,6 +29,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import androidx.room.InvalidationTracker
+import com.codepad.app.sync.SupabaseClient
+import com.codepad.app.sync.SyncEngine
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 private const val SYSTEM = "Sen Code Pad adlı yazılım not uygulamasının asistanısın. Türkçe, kısa ve net yanıt ver. "
 
@@ -47,6 +54,94 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val db = AppDatabase.get(app)
     private val dao = db.dao()
     private val settings = SettingsStore(app)
+
+    // ---- Hesap ve senkron ----
+    var loggedIn by mutableStateOf(settings.hasSession)
+        private set
+    var userEmail by mutableStateOf(settings.userEmail)
+        private set
+    var authBusy by mutableStateOf(false)
+        private set
+    var authError by mutableStateOf("")
+        private set
+    var syncStatus by mutableStateOf("")
+        private set
+
+    private val syncMutex = Mutex()
+    private var syncJob: Job? = null
+    private var pendingSync = false
+
+    init {
+        // Yerel veri her değiştiğinde (sync'in kendi yazmaları hariç) kısa bir gecikmeyle eşitle.
+        AppDatabase.get(app).invalidationTracker.addObserver(
+            object : InvalidationTracker.Observer("notebooks", "notes", "note_cards", "tombstones") {
+                override fun onInvalidated(tables: Set<String>) = scheduleSync()
+            },
+        )
+        if (loggedIn) scheduleSync(1_500)
+    }
+
+    fun scheduleSync(delayMs: Long = 3_000) {
+        if (!settings.hasSession) return
+        if (syncMutex.isLocked) {
+            pendingSync = true
+            return
+        }
+        syncJob?.cancel()
+        syncJob = viewModelScope.launch {
+            delay(delayMs)
+            runSync()
+        }
+    }
+
+    fun syncNow() = viewModelScope.launch { runSync() }
+
+    private suspend fun runSync() {
+        if (!settings.hasSession) return
+        syncMutex.withLock {
+            syncStatus = "Eşitleniyor…"
+            syncStatus = try {
+                SyncEngine.sync(dao, settings)
+                val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                    .format(java.util.Date())
+                "Son eşitleme: $time"
+            } catch (e: Exception) {
+                "Eşitlenemedi: ${e.message ?: "bağlantıyı kontrol et"}"
+            }
+        }
+        if (pendingSync) {
+            pendingSync = false
+            scheduleSync()
+        }
+    }
+
+    fun authenticate(email: String, password: String, create: Boolean, onDone: () -> Unit) = viewModelScope.launch {
+        authBusy = true
+        authError = ""
+        try {
+            val session = withContext(Dispatchers.IO) {
+                if (create) SupabaseClient.signUp(email.trim(), password)
+                else SupabaseClient.signIn(email.trim(), password)
+            }
+            settings.saveSession(session)
+            loggedIn = true
+            userEmail = session.email
+            onDone()
+            runSync()
+        } catch (e: Exception) {
+            authError = e.message ?: "Giriş yapılamadı"
+        } finally {
+            authBusy = false
+        }
+    }
+
+    /** Çıkış yapar. Telefondaki notlar kalır ama artık senkronize edilmez. */
+    fun signOut() {
+        settings.clearSession()
+        loggedIn = false
+        userEmail = ""
+        syncStatus = ""
+    }
     private val backup = BackupManager(db, settings)
 
     val notebooks: StateFlow<List<Notebook>> =
