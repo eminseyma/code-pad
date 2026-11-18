@@ -17,7 +17,10 @@ class BackupManager(private val db: AppDatabase, private val settings: SettingsS
 
         root.put("notebooks", JSONArray().also { a ->
             dao.allNotebooksOnce().forEach {
-                a.put(JSONObject().put("id", it.id).put("name", it.name).put("colorIndex", it.colorIndex).put("createdAt", it.createdAt))
+                a.put(
+                    JSONObject().put("id", it.id).put("name", it.name).put("colorIndex", it.colorIndex)
+                        .put("createdAt", it.createdAt).put("coverColor", it.coverColor).put("pageStyle", it.pageStyle),
+                )
             }
         })
         root.put("notes", JSONArray().also { a ->
@@ -67,7 +70,11 @@ class BackupManager(private val db: AppDatabase, private val settings: SettingsS
         require(root.optInt("version", 0) >= 1) { "Geçersiz yedek dosyası." }
 
         val notebooks = root.getJSONArray("notebooks").objects().map {
-            Notebook(id = it.getLong("id"), name = it.getString("name"), colorIndex = it.optInt("colorIndex", 0), createdAt = it.getLong("createdAt"))
+            Notebook(
+                id = it.getLong("id"), name = it.getString("name"), colorIndex = it.optInt("colorIndex", 0),
+                createdAt = it.getLong("createdAt"), coverColor = it.optString("coverColor", "mint"),
+                pageStyle = it.optString("pageStyle", "lined"),
+            )
         }
         val notes = root.getJSONArray("notes").objects().map {
             Note(

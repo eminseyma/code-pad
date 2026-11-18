@@ -26,6 +26,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -65,6 +66,9 @@ fun EditorScreen(vm: AppViewModel, noteId: Long, onBack: () -> Unit) {
     var confirmDelete by remember { mutableStateOf(false) }
     var showCustom by remember { mutableStateOf(false) }
     var movingCard by remember { mutableStateOf<NoteCard?>(null) }
+    val notebooks by vm.notebooks.collectAsStateWithLifecycle()
+    val pageStyle = notebooks.firstOrNull { it.id == note?.notebookId }?.pageStyle ?: "lined"
+    val lineColor = MaterialTheme.colorScheme.outline
 
     LaunchedEffect(noteId) {
         vm.loadNote(noteId)?.let {
@@ -152,6 +156,7 @@ fun EditorScreen(vm: AppViewModel, noteId: Long, onBack: () -> Unit) {
                 focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
                 unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
             )
+            Column(Modifier.fillMaxWidth().drawBehind { drawPage(pageStyle, lineColor) }) {
             TextField(
                 value = title,
                 onValueChange = { title = it },
@@ -174,6 +179,8 @@ fun EditorScreen(vm: AppViewModel, noteId: Long, onBack: () -> Unit) {
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onBackground),
                     colors = transparent,
                 )
+            }
+
             }
 
             if (cards.isNotEmpty()) {

@@ -1,6 +1,7 @@
 package com.codepad.app.data
 
 import android.content.Context
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Delete
@@ -24,6 +25,8 @@ data class Notebook(
     val name: String,
     val colorIndex: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "'mint'") val coverColor: String = "mint",
+    @ColumnInfo(defaultValue = "'lined'") val pageStyle: String = "lined",
 )
 
 @Entity(
@@ -113,6 +116,9 @@ interface NoteDao {
     @Insert
     suspend fun insertNotebook(notebook: Notebook): Long
 
+    @Update
+    suspend fun updateNotebook(notebook: Notebook)
+
     @Delete
     suspend fun deleteNotebook(notebook: Notebook)
 
@@ -198,6 +204,14 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
+/** v3 -> v4: defter kapağı ve sayfa stili. Mevcut defterler varsayılanla açılır. */
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `notebooks` ADD COLUMN `coverColor` TEXT NOT NULL DEFAULT 'mint'")
+        db.execSQL("ALTER TABLE `notebooks` ADD COLUMN `pageStyle` TEXT NOT NULL DEFAULT 'lined'")
+    }
+}
+
 /** v2 -> v3: sohbet geçmişi tabloları. */
 val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(db: SupportSQLiteDatabase) {
@@ -222,7 +236,7 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
 
 @Database(
     entities = [Notebook::class, Note::class, NoteCard::class, ChatSession::class, SavedMessage::class],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -237,7 +251,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "codepad.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
             }
     }
 }

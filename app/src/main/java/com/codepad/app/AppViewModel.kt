@@ -135,6 +135,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         scheduleBackup()
     }
 
+    fun updateNotebookStyle(notebook: Notebook, cover: String, page: String) = viewModelScope.launch {
+        dao.updateNotebook(notebook.copy(coverColor = cover, pageStyle = page))
+        scheduleBackup()
+    }
+
     // ---- Not kartları ----
 
     fun addCard(noteId: Long, title: String, body: String, section: String = "") = viewModelScope.launch {
