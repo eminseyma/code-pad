@@ -209,7 +209,6 @@ private fun NewNotebookTile(modifier: Modifier, onClick: () -> Unit) {
 
 @Composable
 fun NoteRow(note: Note, notebookName: String, onClick: () -> Unit) {
-    val lang = Regex("```(\\w+)").find(note.content)?.groupValues?.get(1)?.take(3)
     Row(
         Modifier
             .fillMaxWidth()
@@ -221,12 +220,7 @@ fun NoteRow(note: Note, notebookName: String, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(
-            Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(CodeBg),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(lang ?: "md", color = Mint, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-        }
+        NoteBadge(note.content)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 note.title.ifBlank { "Başlıksız not" },
