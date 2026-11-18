@@ -1,0 +1,49 @@
+name: Build Windows app
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/build-desktop.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
+
+      - name: Windows uygulamasını derle
+        working-directory: desktop
+        run: gradle createDistributable --no-daemon
+
+      - name: Klasörü ziple
+        shell: pwsh
+        run: Compress-Archive -Path desktop/build/compose/binaries/main/app/CodePad -DestinationPath CodePad-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CodePad-windows
+          path: CodePad-windows.zip
+
+      - name: Release oluştur
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "windows-${{ github.run_number }}" CodePad-windows.zip \
+            --title "Code Pad Windows ${{ github.run_number }}" \
+            --notes "Windows sürümü. Zip'i aç, içindeki CodePad.exe'yi çalıştır."

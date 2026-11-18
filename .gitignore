@@ -8,3 +8,7 @@
 /captures
 .externalNativeBuild/
 .cxx/
+
+# Windows uygulaması derleme çıktısı
+desktop/build/
+desktop/.gradle/
