@@ -43,25 +43,6 @@ class SettingsStore(context: Context) {
             .getOrDefault(ThemeChoice.MINT)
         set(value) = prefs.edit().putString(KEY_THEME, value.name).apply()
 
-    /** Google Drive'a bir kez bağlanıldı mı? */
-    var driveConnected: Boolean
-        get() = prefs.getBoolean(KEY_DRIVE, false)
-        set(value) = prefs.edit().putBoolean(KEY_DRIVE, value).apply()
-
-    /** Drive'da yedek var ve kullanıcı henüz geri yükleme/üzerine yazma kararı vermedi: otomatik yedek durur. */
-    var driveHold: Boolean
-        get() = prefs.getBoolean(KEY_HOLD, false)
-        set(value) = prefs.edit().putBoolean(KEY_HOLD, value).apply()
-
-    var lastBackup: Long
-        get() = prefs.getLong(KEY_LAST_BACKUP, 0L)
-        set(value) = prefs.edit().putLong(KEY_LAST_BACKUP, value).apply()
-
-    /** API anahtarı da yedeğe girsin mi? */
-    var backupKey: Boolean
-        get() = prefs.getBoolean(KEY_BACKUP_KEY, true)
-        set(value) = prefs.edit().putBoolean(KEY_BACKUP_KEY, value).apply()
-
     fun actions(): List<AiAction> {
         val raw = prefs.getString(KEY_ACTIONS, null) ?: return DefaultActions
         return try {
@@ -88,10 +69,6 @@ class SettingsStore(context: Context) {
         private const val KEY_MODEL = "gemini_model"
         private const val KEY_THEME = "theme"
         private const val KEY_ACTIONS = "ai_actions"
-        private const val KEY_DRIVE = "drive_connected"
-        private const val KEY_HOLD = "drive_hold"
-        private const val KEY_LAST_BACKUP = "last_backup"
-        private const val KEY_BACKUP_KEY = "backup_key"
 
         // Google model adlarını zaman zaman günceller; ayarlardan değiştirilebilir.
         const val DEFAULT_MODEL = "gemini-3.6-flash"

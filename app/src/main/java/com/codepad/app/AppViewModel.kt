@@ -1,6 +1,7 @@
 package com.codepad.app
 
 import android.app.Application
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -11,7 +12,6 @@ import com.codepad.app.ai.ChatMessage
 import com.codepad.app.ai.GeminiClient
 import com.codepad.app.data.AiAction
 import com.codepad.app.data.BackupManager
-import com.codepad.app.drive.DriveApi
 import com.codepad.app.data.ChatSession
 import com.codepad.app.data.SavedMessage
 import com.codepad.app.data.AppDatabase
@@ -21,8 +21,8 @@ import com.codepad.app.data.NoteCard
 import com.codepad.app.data.Notebook
 import com.codepad.app.data.SettingsStore
 import com.codepad.app.data.ThemeChoice
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -82,21 +82,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var currentSessionId by mutableStateOf<Long?>(null)
         private set
 
-    // Google Drive yedeği
-    var driveConnected by mutableStateOf(settings.driveConnected)
-        private set
-    var driveHold by mutableStateOf(settings.driveHold)
-        private set
-    var lastBackup by mutableStateOf(settings.lastBackup)
-        private set
-    var backupKeyEnabled by mutableStateOf(settings.backupKey)
-        private set
+    // Yedek dosyası
     var backupStatus by mutableStateOf("")
         private set
     var backupBusy by mutableStateOf(false)
         private set
-    private var backupJob: Job? = null
-    private var pendingBackup = false
 
     init {
         viewModelScope.launch {
@@ -108,12 +98,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addNotebook(name: String) = viewModelScope.launch {
         if (name.isNotBlank()) dao.insertNotebook(Notebook(name = name.trim(), colorIndex = notebooks.value.size % 4))
-        scheduleBackup()
     }
 
     fun deleteNotebook(notebook: Notebook) = viewModelScope.launch {
         dao.deleteNotebook(notebook)
-        scheduleBackup()
     }
 
     /** Boş bir not oluşturur ve id'sini döndürür. */
@@ -127,34 +115,28 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveNote(note: Note) = viewModelScope.launch {
         dao.upsertNote(note.copy(updatedAt = System.currentTimeMillis()))
-        scheduleBackup()
     }
 
     fun deleteNote(note: Note) = viewModelScope.launch {
         dao.deleteNote(note)
-        scheduleBackup()
     }
 
     fun updateNotebookStyle(notebook: Notebook, cover: String, page: String) = viewModelScope.launch {
         dao.updateNotebook(notebook.copy(coverColor = cover, pageStyle = page))
-        scheduleBackup()
     }
 
     // ---- Not kartları ----
 
     fun addCard(noteId: Long, title: String, body: String, section: String = "") = viewModelScope.launch {
         dao.insertCard(NoteCard(noteId = noteId, title = title, body = body, section = section.trim()))
-        scheduleBackup()
     }
 
     fun moveCard(card: NoteCard, section: String) = viewModelScope.launch {
         dao.updateCard(card.copy(section = section.trim()))
-        scheduleBackup()
     }
 
     fun deleteCard(card: NoteCard) = viewModelScope.launch {
         dao.deleteCard(card)
-        scheduleBackup()
     }
 
     // ---- Ayarlar ----
@@ -164,156 +146,60 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         settings.model = newModel
         apiKey = settings.apiKey
         model = settings.model
-        scheduleBackup()
     }
 
     fun changeTheme(choice: ThemeChoice) {
         settings.theme = choice
         theme = choice
-        scheduleBackup()
     }
 
     fun saveActions(list: List<AiAction>) {
         settings.saveActions(list)
         actions = list
-        scheduleBackup()
     }
 
     fun resetActions() = saveActions(DefaultActions)
 
-    // ---- Google Drive yedeği ----
+    // ---- Yedek dosyası ----
 
-    /** Drive'dan sessizce erişim jetonu alır; izin gerekiyorsa bağlantıyı düşürür. */
-    private suspend fun silentToken(): String? {
-        val r = DriveApi.authorize(appContext)
-        if (r.hasResolution()) {
-            settings.driveConnected = false
-            driveConnected = false
-            backupStatus = "Drive izni yenilenmeli. Ayarlar'dan tekrar bağlan."
-            return null
-        }
-        return r.accessToken
-    }
-
-    private suspend fun uploadBackup(token: String) {
-        DriveApi.upload(token, backup.export(backupKeyEnabled))
-        pendingBackup = false
-        settings.lastBackup = System.currentTimeMillis()
-        lastBackup = settings.lastBackup
-        backupStatus = "Yedeklendi."
-    }
-
-    fun reportBackup(message: String) {
-        backupStatus = message
-    }
-
-    /** İlk girişten sonra çağrılır. Drive'da yedek varsa üzerine yazmadan önce kullanıcıya sorar. */
-    fun onDriveConnected() {
-        settings.driveConnected = true
-        driveConnected = true
-        viewModelScope.launch {
-            backupBusy = true
-            try {
-                val token = silentToken() ?: return@launch
-                if (DriveApi.hasBackup(token)) {
-                    settings.driveHold = true
-                    driveHold = true
-                    backupStatus = "Drive'da daha önce alınmış bir yedek var. 'Geri yükle' ile getir ya da " +
-                        "'Şimdi yedekle' ile bu telefondaki verilerle değiştir."
-                } else {
-                    settings.driveHold = false
-                    driveHold = false
-                    uploadBackup(token)
-                }
-            } catch (e: Exception) {
-                backupStatus = "Bağlandı ama Drive'a erişilemedi: ${e.message}"
-            } finally {
-                backupBusy = false
+    /** Tüm verileri seçilen dosyaya yazar. */
+    fun saveBackupTo(uri: Uri, includeKey: Boolean) = viewModelScope.launch {
+        backupBusy = true
+        backupStatus = "Yedek yazılıyor…"
+        try {
+            val json = backup.export(includeKey)
+            withContext(Dispatchers.IO) {
+                appContext.contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray(Charsets.UTF_8)) }
+                    ?: error("dosya açılamadı")
             }
+            backupStatus = "Yedek kaydedildi."
+        } catch (e: Exception) {
+            backupStatus = "Yedek kaydedilemedi: ${e.message}"
+        } finally {
+            backupBusy = false
         }
     }
 
-    fun disconnectDrive() {
-        settings.driveConnected = false
-        driveConnected = false
-        settings.driveHold = false
-        driveHold = false
-        backupStatus = "Bağlantı kesildi. Drive'daki yedek silinmedi."
-    }
-
-    fun changeBackupKey(on: Boolean) {
-        settings.backupKey = on
-        backupKeyEnabled = on
-        scheduleBackup()
-    }
-
-    /** Değişikliklerden 15 sn sonra yedekler (üst üste yazmaları birleştirir). */
-    fun scheduleBackup() {
-        if (!driveConnected) return
-        pendingBackup = true
-        backupJob?.cancel()
-        backupJob = viewModelScope.launch {
-            delay(15_000)
-            backupNow()
-        }
-    }
-
-    /** Uygulama arka plana giderken bekleyen yedek varsa hemen gönderir. */
-    fun flushBackup() {
-        if (pendingBackup && driveConnected) {
-            backupJob?.cancel()
-            backupNow()
-        }
-    }
-
-    /** manual = true ise "Drive'da yedek var" beklemesini de kaldırır (bu telefonun verisi yedeğin yerine geçer). */
-    fun backupNow(manual: Boolean = false) {
-        if (backupBusy) return
-        if (driveHold && !manual) return
-        viewModelScope.launch {
-            backupBusy = true
-            if (manual) backupStatus = "Yedekleniyor…"
-            try {
-                val token = silentToken() ?: return@launch
-                uploadBackup(token)
-                if (driveHold) {
-                    driveHold = false
-                    settings.driveHold = false
-                }
-            } catch (e: Exception) {
-                backupStatus = "Yedekleme başarısız: ${e.message}"
-            } finally {
-                backupBusy = false
+    /** Seçilen yedek dosyasını yükler; bu telefondaki veriler dosyadakiyle değiştirilir. */
+    fun restoreFrom(uri: Uri) = viewModelScope.launch {
+        backupBusy = true
+        backupStatus = "Yedek okunuyor…"
+        try {
+            val json = withContext(Dispatchers.IO) {
+                appContext.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                    ?: error("dosya açılamadı")
             }
-        }
-    }
-
-    /** Drive'daki yedeği bu telefona yükler; mevcut yerel verinin yerine geçer. */
-    fun restoreFromDrive() {
-        viewModelScope.launch {
-            backupBusy = true
-            backupStatus = "Yedek indiriliyor…"
-            try {
-                val token = silentToken() ?: return@launch
-                val json = DriveApi.download(token)
-                if (json == null) {
-                    backupStatus = "Drive'da yedek bulunamadı."
-                } else {
-                    backup.restore(json)
-                    apiKey = settings.apiKey
-                    model = settings.model
-                    theme = settings.theme
-                    actions = settings.actions()
-                    driveHold = false
-                    settings.driveHold = false
-                    newSession()
-                    backupStatus = "Yedek geri yüklendi."
-                }
-            } catch (e: Exception) {
-                backupStatus = "Geri yükleme başarısız: ${e.message}"
-            } finally {
-                backupBusy = false
-            }
+            backup.restore(json)
+            apiKey = settings.apiKey
+            model = settings.model
+            theme = settings.theme
+            actions = settings.actions()
+            newSession()
+            backupStatus = "Yedek yüklendi."
+        } catch (e: Exception) {
+            backupStatus = "Yükleme başarısız: ${e.message}"
+        } finally {
+            backupBusy = false
         }
     }
 
@@ -374,7 +260,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             chat += ChatMessage("model", reply)
             dao.insertMessage(SavedMessage(sessionId = sid, role = "model", text = reply))
             chatBusy = false
-            scheduleBackup()
         }
     }
 
@@ -395,7 +280,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteSession(id: Long) = viewModelScope.launch {
         dao.deleteSession(id)
         if (currentSessionId == id) newSession()
-        scheduleBackup()
     }
 
     /** Basit anahtar kelime puanlaması. Eşleşme yoksa en son güncellenen notlara bakar. */

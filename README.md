@@ -40,12 +40,9 @@ app/src/main/java/com/codepad/app/
 - Bulut yedek/senkron yok; istenirse Firebase ya da kendi sunucun eklenebilir.
 - AI kullanıldığında not içeriği Google'a gönderilir.
 
-## Güncelleme (v0.2)
+## Güncelleme ve yedek (v0.2)
 
 - **Silmeden güncelleme:** Her derleme sabit `app/codepad.keystore` ile imzalanır ve `versionCode` derleme numarasıyla artar. APK'yı eski sürümün üzerine kurmak yeterli.
-- **Google Drive yedeği:** Ayarlar > "Google Drive'a bağlan". Yedek Drive'ın uygulamaya özel gizli klasöründe (`appDataFolder`) tutulur. Çalışması için Google Cloud'da Android OAuth istemcisi gerekir (paket adı `com.codepad.app` + aşağıdaki SHA-1).
-- **Gemini anahtarı:** Cihazda şifreli saklanır; isteğe bağlı olarak Drive yedeğine de girer.
+- **Yedek:** Ayarlar > Yedek. "Yedek dosyası oluştur" ile tüm veriyi tek bir JSON dosyası olarak kaydet; "Yedek dosyasından yükle" ile geri al. Gemini anahtarı isteğe bağlı olarak dosyaya eklenir (açık metin, dosyayı paylaşma).
 
-İmza SHA-1: `15:72:9D:C8:A7:33:04:75:4B:50:17:28:F5:D0:04:0B:4B:D7:E4:3C`
-
-> Not: Bu depodaki anahtar yalnızca kişisel kurulum içindir. Depoyu özel tut.
+> Bu depodaki imza anahtarı yalnızca kişisel kurulum içindir. Depoyu özel tut.
