@@ -1,5 +1,8 @@
 package com.codepad.app.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,12 +16,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.codepad.app.AppViewModel
 import com.codepad.app.data.AiAction
 import com.codepad.app.data.ThemeChoice
+import com.codepad.app.drive.DriveApi
+import com.google.android.gms.auth.api.identity.Identity
+import com.google.android.gms.common.api.ApiException
+import kotlinx.coroutines.launch
 import java.util.UUID
 
 private fun themeLabel(t: ThemeChoice) = when (t) {
@@ -26,6 +34,9 @@ private fun themeLabel(t: ThemeChoice) = when (t) {
     ThemeChoice.WHITE -> "Beyaz"
     ThemeChoice.BLACK -> "Siyah"
 }
+
+private fun formatDate(ms: Long): String =
+    java.text.SimpleDateFormat("dd.MM.yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date(ms))
 
 @Composable
 private fun SectionTitle(text: String) {
@@ -39,6 +50,39 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
     var saved by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<AiAction?>(null) }
     var creating by remember { mutableStateOf(false) }
+    var confirmRestore by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // Ayarlardan çıkarken yazılmış ama kaydedilmemiş anahtar/model kaybolmasın.
+    DisposableEffect(Unit) {
+        onDispose { vm.saveSettings(key, model) }
+    }
+
+    // Google'ın tek seferlik izin ekranı bitince buraya döner.
+    val authLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
+        try {
+            Identity.getAuthorizationClient(context).getAuthorizationResultFromIntent(res.data)
+            vm.onDriveConnected()
+        } catch (e: ApiException) {
+            vm.reportBackup("Giriş tamamlanamadı (kod ${e.statusCode}).")
+        }
+    }
+
+    fun connectDrive() {
+        scope.launch {
+            try {
+                val r = DriveApi.authorize(context)
+                if (r.hasResolution()) {
+                    authLauncher.launch(IntentSenderRequest.Builder(r.pendingIntent!!.intentSender).build())
+                } else {
+                    vm.onDriveConnected()
+                }
+            } catch (e: Exception) {
+                vm.reportBackup("Bağlanılamadı: ${e.message}")
+            }
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -88,6 +132,13 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                 singleLine = true,
                 shape = RoundedCornerShape(14.dp),
             )
+            if (vm.apiKey.isNotBlank()) {
+                Text(
+                    "Anahtar bu telefonda kayıtlı. Uygulamayı güncellediğinde silinmez, tekrar girmen gerekmez.",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 12.sp,
+                )
+            }
             Button(
                 onClick = {
                     vm.saveSettings(key, model)
@@ -96,6 +147,52 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
             ) { Text(if (saved) "Kaydedildi" else "Kaydet", fontWeight = FontWeight.Bold) }
+
+            SectionTitle("Google Drive yedeği")
+            Text(
+                "Notların, kartların ve sohbetlerin Drive'ında uygulamaya özel gizli bir alana yedeklenir. Bir kez giriş yaparsın; sonra değişiklikler kendiliğinden yedeklenir.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp,
+            )
+            if (!vm.driveConnected) {
+                Button(
+                    onClick = { connectDrive() },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                ) { Text("Google Drive'a bağlan", fontWeight = FontWeight.Bold) }
+            } else {
+                Text(
+                    "Bağlı. " + if (vm.lastBackup > 0) "Son yedek: ${formatDate(vm.lastBackup)}" else "Henüz yedek alınmadı.",
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { vm.backupNow(manual = true) },
+                        enabled = !vm.backupBusy,
+                        shape = RoundedCornerShape(14.dp),
+                    ) { Text("Şimdi yedekle", fontWeight = FontWeight.Bold) }
+                    OutlinedButton(
+                        onClick = { confirmRestore = true },
+                        enabled = !vm.backupBusy,
+                        shape = RoundedCornerShape(14.dp),
+                    ) { Text("Geri yükle", fontWeight = FontWeight.Bold) }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("API anahtarını da yedekle", fontWeight = FontWeight.Bold)
+                        Text(
+                            "Yeni telefonda ya da yeniden kurulumda anahtarı tekrar girmene gerek kalmaz.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Switch(checked = vm.backupKeyEnabled, onCheckedChange = { vm.changeBackupKey(it) })
+                }
+                TextButton(onClick = { vm.disconnectDrive() }) { Text("Bağlantıyı kes") }
+            }
+            if (vm.backupStatus.isNotBlank()) {
+                Text(vm.backupStatus, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
 
             SectionTitle("AI eylemleri")
             Text(
@@ -135,6 +232,21 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
             )
             Spacer(Modifier.height(24.dp))
         }
+    }
+
+    if (confirmRestore) {
+        AlertDialog(
+            onDismissRequest = { confirmRestore = false },
+            title = { Text("Yedekten geri yüklensin mi?") },
+            text = { Text("Bu telefondaki tüm notlar, kartlar ve sohbetler Drive'daki yedekle değiştirilir.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.restoreFromDrive()
+                    confirmRestore = false
+                }) { Text("Geri yükle") }
+            },
+            dismissButton = { TextButton(onClick = { confirmRestore = false }) { Text("Vazgeç") } },
+        )
     }
 
     if (creating) {

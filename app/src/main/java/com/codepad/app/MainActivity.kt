@@ -3,6 +3,7 @@ package com.codepad.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -24,9 +25,17 @@ import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 
 class MainActivity : ComponentActivity() {
+    // CodePadRoot'taki viewModel() ile aynı örnek
+    private val appVm: AppViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent { CodePadRoot() }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        appVm.flushBackup()
     }
 }
 

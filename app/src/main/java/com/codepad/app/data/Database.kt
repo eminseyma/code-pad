@@ -160,6 +160,25 @@ interface NoteDao {
 
     @Insert
     suspend fun insertMessage(message: SavedMessage): Long
+
+    // Yedekleme: tüm verileri oku / geri yüklemeden önce temizle
+    @Query("SELECT * FROM notebooks")
+    suspend fun allNotebooksOnce(): List<Notebook>
+
+    @Query("SELECT * FROM note_cards")
+    suspend fun allCardsOnce(): List<NoteCard>
+
+    @Query("SELECT * FROM chat_sessions")
+    suspend fun allSessionsOnce(): List<ChatSession>
+
+    @Query("SELECT * FROM chat_messages")
+    suspend fun allMessagesOnce(): List<SavedMessage>
+
+    @Query("DELETE FROM notebooks")
+    suspend fun clearNotebooks()
+
+    @Query("DELETE FROM chat_sessions")
+    suspend fun clearSessions()
 }
 
 /** v1 -> v2: not kartları tablosu. Mevcut notlar korunur. */

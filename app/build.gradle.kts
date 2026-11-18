@@ -13,13 +13,29 @@ android {
         applicationId = "com.codepad.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // Her CI derlemesinde artar; böylece yeni APK eskisinin üzerine güncelleme olarak kurulur.
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionName = "0.2.0"
+    }
+
+    // Sabit imza: telefonda uygulamayı silmeden güncelleyebilmek için her derleme aynı anahtarı kullanır.
+    signingConfigs {
+        create("codepad") {
+            storeFile = file("codepad.keystore")
+            storeType = "pkcs12"
+            storePassword = "codepad"
+            keyAlias = "codepad"
+            keyPassword = "codepad"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("codepad")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("codepad")
         }
     }
 
@@ -55,4 +71,8 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
 
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    // Google Drive yedekleme: tek seferlik yetkilendirme (Authorization API)
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
 }
