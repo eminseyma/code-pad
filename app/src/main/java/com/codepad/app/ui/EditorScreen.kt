@@ -45,6 +45,43 @@ import com.codepad.app.data.NoteCard
 import kotlinx.coroutines.delay
 
 /** İmleç/seçim yerine metin koyar. cursorBack > 0 ise imleci geriye alır. */
+/** Editörde akıllı yazım: parantez/tırnak otomatik kapanır, kapanış karakteri üzerine yazılır, Enter girintiyi korur. */
+private fun smartEdit(old: TextFieldValue, new: TextFieldValue): TextFieldValue {
+    if (new.text.length != old.text.length + 1) return new
+    val cur = new.selection.start
+    if (cur < 1 || cur > new.text.length || !new.selection.collapsed) return new
+    val ch = new.text[cur - 1]
+    val prev = new.text.getOrNull(cur - 2)
+    val next = new.text.getOrNull(cur)
+    val pairs = mapOf('(' to ')', '[' to ']', '{' to '}', '"' to '"', '\'' to '\'', '`' to '`')
+    val closers = setOf(')', ']', '}', '"', '\'', '`')
+
+    // Kapanış karakterini yazınca, zaten oradaysa üzerine yaz (çift yazma olmasın)
+    if (ch in closers && next == ch) {
+        val t = new.text.removeRange(cur, cur + 1)
+        return TextFieldValue(t, TextRange(cur))
+    }
+
+    // Açılış karakteri: karşılığını ekle
+    if (ch in pairs) {
+        val quote = ch == '"' || ch == '\'' || ch == '`'
+        // Kelimenin ortasındaki tırnak (örn. don't) için otomatik kapatma yapma
+        if (quote && prev != null && prev.isLetterOrDigit()) return new
+        val t = new.text.substring(0, cur) + pairs.getValue(ch) + new.text.substring(cur)
+        return TextFieldValue(t, TextRange(cur))
+    }
+
+    // Enter: önceki satırın girintisini koru
+    if (ch == '\n') {
+        val lineStart = new.text.lastIndexOf('\n', cur - 2) + 1
+        val indent = new.text.substring(lineStart, cur - 1).takeWhile { it == ' ' || it == '\t' }
+        if (indent.isEmpty()) return new
+        val t = new.text.substring(0, cur) + indent + new.text.substring(cur)
+        return TextFieldValue(t, TextRange(cur + indent.length))
+    }
+    return new
+}
+
 private fun TextFieldValue.replaceSel(s: String, cursorBack: Int = 0): TextFieldValue {
     val a = selection.min
     val b = selection.max
@@ -173,7 +210,7 @@ fun EditorScreen(vm: AppViewModel, noteId: Long, onBack: () -> Unit) {
             } else {
                 TextField(
                     value = content,
-                    onValueChange = { content = it },
+                    onValueChange = { content = smartEdit(content, it) },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 300.dp),
                     placeholder = { Text("Yaz… Kod için ``` ile blok aç ya da alttaki </> düğmesine bas.") },
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onBackground),
