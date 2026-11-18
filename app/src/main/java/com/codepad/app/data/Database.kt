@@ -18,8 +18,9 @@ import androidx.room.Upsert
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
+import java.util.UUID
 
-@Entity(tableName = "notebooks")
+@Entity(tableName = "notebooks", indices = [Index(value = ["syncId"], unique = true)])
 data class Notebook(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
@@ -27,6 +28,8 @@ data class Notebook(
     val createdAt: Long = System.currentTimeMillis(),
     @ColumnInfo(defaultValue = "'mint'") val coverColor: String = "mint",
     @ColumnInfo(defaultValue = "'lined'") val pageStyle: String = "lined",
+    @ColumnInfo(defaultValue = "''") val syncId: String = UUID.randomUUID().toString(),
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = System.currentTimeMillis(),
 )
 
 @Entity(
@@ -39,7 +42,7 @@ data class Notebook(
             onDelete = ForeignKey.CASCADE,
         ),
     ],
-    indices = [Index("notebookId")],
+    indices = [Index("notebookId"), Index(value = ["syncId"], unique = true)],
 )
 data class Note(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -47,6 +50,7 @@ data class Note(
     val title: String = "",
     val content: String = "",
     val updatedAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "''") val syncId: String = UUID.randomUUID().toString(),
 )
 
 /** Nottaki AI kartı. section boşsa "bölümsüz" demektir. */
@@ -60,7 +64,7 @@ data class Note(
             onDelete = ForeignKey.CASCADE,
         ),
     ],
-    indices = [Index("noteId")],
+    indices = [Index("noteId"), Index(value = ["syncId"], unique = true)],
 )
 data class NoteCard(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -69,6 +73,16 @@ data class NoteCard(
     val title: String,
     val body: String,
     val createdAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "''") val syncId: String = UUID.randomUUID().toString(),
+)
+
+/** Silinen kayıtların bulut kimliği; diğer cihazlara silmeyi bildirmek için tutulur. */
+@Entity(tableName = "tombstones")
+data class Tombstone(
+    @PrimaryKey val syncId: String,
+    val kind: String, // "notebook" | "note" | "card"
+    val deletedAt: Long = System.currentTimeMillis(),
 )
 
 /** Asistan sohbeti. */
@@ -180,6 +194,33 @@ interface NoteDao {
     @Query("SELECT * FROM chat_messages")
     suspend fun allMessagesOnce(): List<SavedMessage>
 
+    @Upsert
+    suspend fun upsertNotebook(notebook: Notebook): Long
+
+    @Upsert
+    suspend fun upsertCard(card: NoteCard): Long
+
+    @Query("SELECT * FROM notes")
+    suspend fun allNotesOnce(): List<Note>
+
+    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    suspend fun addTombstone(tombstone: Tombstone)
+
+    @Query("SELECT * FROM tombstones")
+    suspend fun tombstones(): List<Tombstone>
+
+    @Query("DELETE FROM tombstones WHERE syncId IN (:ids)")
+    suspend fun clearTombstones(ids: List<String>)
+
+    @Query("DELETE FROM notebooks WHERE syncId = :syncId")
+    suspend fun deleteNotebookBySync(syncId: String)
+
+    @Query("DELETE FROM notes WHERE syncId = :syncId")
+    suspend fun deleteNoteBySync(syncId: String)
+
+    @Query("DELETE FROM note_cards WHERE syncId = :syncId")
+    suspend fun deleteCardBySync(syncId: String)
+
     @Query("DELETE FROM notebooks")
     suspend fun clearNotebooks()
 
@@ -212,6 +253,32 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
     }
 }
 
+/** v4 -> v5: bulut senkronu için kalıcı kimlikler (syncId), güncelleme zamanları ve silinen kayıt listesi. */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `notebooks` ADD COLUMN `syncId` TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE `notebooks` ADD COLUMN `updatedAt` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("UPDATE `notebooks` SET `syncId` = lower(hex(randomblob(16))), `updatedAt` = `createdAt`")
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_notebooks_syncId` ON `notebooks` (`syncId`)")
+
+        db.execSQL("ALTER TABLE `notes` ADD COLUMN `syncId` TEXT NOT NULL DEFAULT ''")
+        db.execSQL("UPDATE `notes` SET `syncId` = lower(hex(randomblob(16)))")
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_notes_syncId` ON `notes` (`syncId`)")
+
+        db.execSQL("ALTER TABLE `note_cards` ADD COLUMN `syncId` TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE `note_cards` ADD COLUMN `updatedAt` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("UPDATE `note_cards` SET `syncId` = lower(hex(randomblob(16))), `updatedAt` = `createdAt`")
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_note_cards_syncId` ON `note_cards` (`syncId`)")
+
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `tombstones` (" +
+                "`syncId` TEXT NOT NULL PRIMARY KEY, " +
+                "`kind` TEXT NOT NULL, " +
+                "`deletedAt` INTEGER NOT NULL)",
+        )
+    }
+}
+
 /** v2 -> v3: sohbet geçmişi tabloları. */
 val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(db: SupportSQLiteDatabase) {
@@ -235,8 +302,8 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
 }
 
 @Database(
-    entities = [Notebook::class, Note::class, NoteCard::class, ChatSession::class, SavedMessage::class],
-    version = 4,
+    entities = [Notebook::class, Note::class, NoteCard::class, ChatSession::class, SavedMessage::class, Tombstone::class],
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -251,7 +318,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "codepad.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
             }
     }
 }

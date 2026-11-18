@@ -20,6 +20,7 @@ import com.codepad.app.data.Note
 import com.codepad.app.data.NoteCard
 import com.codepad.app.data.Notebook
 import com.codepad.app.data.SettingsStore
+import com.codepad.app.data.Tombstone
 import com.codepad.app.data.ThemeChoice
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -101,6 +102,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun deleteNotebook(notebook: Notebook) = viewModelScope.launch {
+        // Silinenleri bulut senkronuna bildir: defter, içindeki notlar ve kartlar.
+        val now = System.currentTimeMillis()
+        val notes = dao.allNotesOnce().filter { it.notebookId == notebook.id }
+        val noteIds = notes.map { it.id }.toSet()
+        dao.allCardsOnce().filter { it.noteId in noteIds }.forEach { dao.addTombstone(Tombstone(it.syncId, "card", now)) }
+        notes.forEach { dao.addTombstone(Tombstone(it.syncId, "note", now)) }
+        dao.addTombstone(Tombstone(notebook.syncId, "notebook", now))
         dao.deleteNotebook(notebook)
     }
 
@@ -118,11 +126,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun deleteNote(note: Note) = viewModelScope.launch {
+        val now = System.currentTimeMillis()
+        dao.allCardsOnce().filter { it.noteId == note.id }.forEach { dao.addTombstone(Tombstone(it.syncId, "card", now)) }
+        dao.addTombstone(Tombstone(note.syncId, "note", now))
         dao.deleteNote(note)
     }
 
     fun updateNotebookStyle(notebook: Notebook, cover: String, page: String) = viewModelScope.launch {
-        dao.updateNotebook(notebook.copy(coverColor = cover, pageStyle = page))
+        dao.updateNotebook(notebook.copy(coverColor = cover, pageStyle = page, updatedAt = System.currentTimeMillis()))
     }
 
     // ---- Not kartları ----
@@ -132,10 +143,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun moveCard(card: NoteCard, section: String) = viewModelScope.launch {
-        dao.updateCard(card.copy(section = section.trim()))
+        dao.updateCard(card.copy(section = section.trim(), updatedAt = System.currentTimeMillis()))
     }
 
     fun deleteCard(card: NoteCard) = viewModelScope.launch {
+        dao.addTombstone(Tombstone(card.syncId, "card", System.currentTimeMillis()))
         dao.deleteCard(card)
     }
 
