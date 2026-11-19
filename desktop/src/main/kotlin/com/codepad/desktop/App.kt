@@ -291,7 +291,6 @@ fun SettingsDialog(onDismiss: () -> Unit) {
         dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } },
     )
 }
-}
 
 /** Parantez/tırnak otomatik kapanır, kapanış karakteri üzerine yazılır, Enter girintiyi korur. */
 fun smartEdit(old: TextFieldValue, new: TextFieldValue): TextFieldValue {
