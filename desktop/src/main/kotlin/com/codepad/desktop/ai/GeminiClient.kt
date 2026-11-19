@@ -38,22 +38,33 @@ object GeminiClient {
                 )
                 .put("contents", contents)
 
-            val conn = (URL("$BASE/$model:generateContent").openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                connectTimeout = 15_000
-                readTimeout = 90_000
-                doOutput = true
-                setRequestProperty("Content-Type", "application/json")
-                setRequestProperty("x-goog-api-key", apiKey)
+            var attempt = 0
+            var raw: String
+            var code: Int
+            while (true) {
+                val conn = (URL("$BASE/$model:generateContent").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 15_000
+                    readTimeout = 90_000
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/json")
+                    setRequestProperty("x-goog-api-key", apiKey)
+                }
+                conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                code = conn.responseCode
+                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                raw = stream?.bufferedReader()?.use { it.readText() } ?: ""
+                conn.disconnect()
+                val transient = code == 429 || code == 500 || code == 503
+                if (code in 200..299 || !transient || attempt >= 2) break
+                attempt++
+                Thread.sleep(2_000L * attempt * attempt)
             }
-            conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val raw = stream.bufferedReader().use { it.readText() }
-            conn.disconnect()
 
             if (code !in 200..299) {
+                if (code == 503 || code == 429 || code == 500) {
+                    error("Gemini şu an yoğun, birkaç saniye sonra tekrar dene. (Kod $code)")
+                }
                 val msg = runCatching { JSONObject(raw).getJSONObject("error").getString("message") }
                     .getOrDefault(raw.take(200))
                 error("Gemini hatası ($code): $msg")
