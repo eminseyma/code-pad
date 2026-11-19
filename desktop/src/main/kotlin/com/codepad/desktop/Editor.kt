@@ -33,6 +33,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -140,9 +143,14 @@ fun EditorPane(noteId: String) {
         BasicTextField(
             value = body,
             onValueChange = { typed -> saveBody(smartEdit(body, typed)) },
-            modifier = Modifier.weight(1f).fillMaxWidth().background(Color.White).padding(12.dp),
-            textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, color = Forest),
-            cursorBrush = SolidColor(Green),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surface)
+                .drawBehind { drawPageStyle(Store.notebooks.firstOrNull { it.id == note.nbId }?.page ?: "lined", Color(0x33808F85)) }
+                .padding(12.dp),
+            textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         )
 
         // Kartlar (bölümlere göre)
@@ -259,15 +267,15 @@ private fun CardsPanel(noteId: String, onAppend: (String) -> Unit, onMove: (Stri
         .toList()
         .sortedWith(compareBy({ it.first == "Bölümsüz" }, { it.first }))
 
-    Column(Modifier.fillMaxWidth().height(240.dp).background(Color.White).padding(10.dp)) {
-        Text("Kartlar", fontWeight = FontWeight.Bold, color = Forest)
+    Column(Modifier.fillMaxWidth().height(240.dp).background(MaterialTheme.colorScheme.surface).padding(10.dp)) {
+        Text("Kartlar", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
         LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             grouped.forEach { (section, list) ->
                 item { Text(section, color = Green, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
                 items(list) { c ->
                     Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(8.dp)) {
                         Text(c.title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                        Text(c.body, fontSize = 12.sp, color = Muted, maxLines = 4)
+                        Text(c.body, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 4)
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             TextButton(onClick = { onAppend(c.body) }) { Text("Nota ekle", fontSize = 12.sp) }
                             TextButton(onClick = { onMove(c.id, c.section) }) { Text("Bölüm", fontSize = 12.sp) }
@@ -301,4 +309,42 @@ private fun SectionDialog(title: String, initial: String, confirmLabel: String, 
         confirmButton = { TextButton(onClick = { onConfirm(section.trim()) }) { Text(confirmLabel) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } },
     )
+}
+
+
+/** Sayfa stili: çizgili, noktalı, kareli ya da boş. */
+fun DrawScope.drawPageStyle(style: String, color: Color) {
+    val step = 28.dp.toPx()
+    when (style) {
+        "lined" -> {
+            var y = step
+            while (y < size.height) {
+                drawLine(color, Offset(0f, y), Offset(size.width, y), strokeWidth = 1f)
+                y += step
+            }
+        }
+        "dotted" -> {
+            var y = step
+            while (y < size.height) {
+                var x = step
+                while (x < size.width) {
+                    drawCircle(color, radius = 1.6f, center = Offset(x, y))
+                    x += step
+                }
+                y += step
+            }
+        }
+        "grid" -> {
+            var y = step
+            while (y < size.height) {
+                drawLine(color, Offset(0f, y), Offset(size.width, y), strokeWidth = 1f)
+                y += step
+            }
+            var x = step
+            while (x < size.width) {
+                drawLine(color, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1f)
+                x += step
+            }
+        }
+    }
 }
