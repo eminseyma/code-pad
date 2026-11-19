@@ -47,6 +47,7 @@ import kotlinx.coroutines.delay
 /** İmleç/seçim yerine metin koyar. cursorBack > 0 ise imleci geriye alır. */
 /** Editörde akıllı yazım: parantez/tırnak otomatik kapanır, kapanış karakteri üzerine yazılır, Enter girintiyi korur. */
 private fun smartEdit(old: TextFieldValue, new: TextFieldValue): TextFieldValue {
+    pairDelete(old, new)?.let { return it }
     if (new.text.length != old.text.length + 1) return new
     val cur = new.selection.start
     if (cur < 1 || cur > new.text.length || !new.selection.collapsed) return new
@@ -301,7 +302,7 @@ fun EditorScreen(vm: AppViewModel, noteId: Long, onBack: () -> Unit) {
             ToolButton(Icons.Outlined.FormatBold, "Kalın") { edit("****", 2) }
             ToolButton(Icons.AutoMirrored.Outlined.FormatListBulleted, "Liste") { edit("- ") }
             ToolButton(Icons.Outlined.CheckBoxOutlineBlank, "Yapılacak kutusu") { edit("- [ ] ") }
-            ToolButton(Icons.Outlined.Code, "Kod bloğu", highlighted = true) { edit("```kotlin\n\n```\n", 5) }
+            ToolButton(Icons.Outlined.Code, "Kod bloğu", highlighted = true) { edit("```\n\n```\n", 5) }
         }
     }
 
@@ -487,4 +488,16 @@ private fun AiResultDialog(
             confirmButton = { TextButton(onClick = { vm.clearAi() }) { Text("Kapat") } },
         )
     }
+}
+
+private val SMART_PAIRS = mapOf('(' to ')', '[' to ']', '{' to '}', '"' to '"', '\'' to '\'', '`' to '`')
+
+/** Açılış karakteri silinince karşılığı da silinir. */
+private fun pairDelete(old: TextFieldValue, new: TextFieldValue): TextFieldValue? {
+    if (new.text.length != old.text.length - 1) return null
+    var p = 0
+    while (p < new.text.length && old.text[p] == new.text[p]) p++
+    val open = old.text[p]
+    if (SMART_PAIRS[open] == null || old.text.getOrNull(p + 1) != SMART_PAIRS.getValue(open)) return null
+    return TextFieldValue(old.text.removeRange(p, p + 2), TextRange(p))
 }

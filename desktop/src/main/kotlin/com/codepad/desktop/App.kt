@@ -33,6 +33,11 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -423,12 +428,16 @@ fun Workspace(onLogout: () -> Unit) {
                         maxLines = 1,
                     )
                     if (nb != null) {
-                        TextButton(onClick = { showStyle = true }) { Text("Görünüm", fontSize = 12.sp) }
-                        TextButton(onClick = {
+                        IconButton(onClick = { showStyle = true }) {
+                            Icon(Icons.Outlined.Palette, contentDescription = "Görünüm", tint = muted)
+                        }
+                        IconButton(onClick = {
                             Store.deleteNotebook(nb.id)
                             selNb = null
                             selNote = null
-                        }) { Text("Sil", fontSize = 12.sp) }
+                        }) {
+                            Icon(Icons.Outlined.Delete, contentDescription = "Defteri sil", tint = MaterialTheme.colorScheme.error)
+                        }
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -704,6 +713,7 @@ private fun pickFile(save: Boolean): String? {
 
 /** Parantez/tırnak otomatik kapanır, kapanış karakteri üzerine yazılır, Enter girintiyi korur. */
 fun smartEdit(old: TextFieldValue, new: TextFieldValue): TextFieldValue {
+    pairDelete(old, new)?.let { return it }
     if (new.text.length != old.text.length + 1) return new
     val cur = new.selection.start
     if (cur < 1 || cur > new.text.length || !new.selection.collapsed) return new
@@ -730,4 +740,16 @@ fun smartEdit(old: TextFieldValue, new: TextFieldValue): TextFieldValue {
         return TextFieldValue(t, TextRange(cur + indent.length))
     }
     return new
+}
+
+private val SMART_PAIRS = mapOf('(' to ')', '[' to ']', '{' to '}', '"' to '"', '\'' to '\'', '`' to '`')
+
+/** Açılış karakteri silinince karşılığı da silinir. */
+fun pairDelete(old: TextFieldValue, new: TextFieldValue): TextFieldValue? {
+    if (new.text.length != old.text.length - 1) return null
+    var p = 0
+    while (p < new.text.length && old.text[p] == new.text[p]) p++
+    val open = old.text[p]
+    if (SMART_PAIRS[open] == null || old.text.getOrNull(p + 1) != SMART_PAIRS.getValue(open)) return null
+    return TextFieldValue(old.text.removeRange(p, p + 2), TextRange(p))
 }
