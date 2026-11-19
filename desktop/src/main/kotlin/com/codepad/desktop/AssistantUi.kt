@@ -29,7 +29,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -141,7 +143,7 @@ fun AssistantPane(modifier: Modifier) {
                     onValueChange = { input = it },
                     singleLine = true,
                     label = { Text("Notlarına bir şey sor (Enter ile gönder)") },
-                    modifier = Modifier.weight(1f).onPreviewKeyEvent { e ->
+                    modifier = Modifier.weight(1f).onPreviewKeyEvent { e: KeyEvent ->
                         if (e.key == Key.Enter && e.type == KeyEventType.KeyDown) {
                             send(input)
                             true
