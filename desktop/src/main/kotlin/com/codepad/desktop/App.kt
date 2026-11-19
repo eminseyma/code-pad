@@ -2,6 +2,10 @@ package com.codepad.desktop
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -321,24 +325,79 @@ fun Workspace(onLogout: () -> Unit) {
         Column(
             Modifier.width(240.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surface).padding(12.dp),
         ) {
-            Text("Code Pad", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
-            Text(Sync.status.ifBlank { "Henüz eşitlenmedi" }, fontSize = 12.sp, color = muted)
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Button(onClick = { Sync.runNow() }) { Text("Eşitle", fontSize = 13.sp) }
-                OutlinedButton(onClick = onLogout) { Text("Çıkış", fontSize = 13.sp) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF8CCBA9)),
+                    contentAlignment = Alignment.Center,
+                ) { Text("</>", fontWeight = FontWeight.ExtraBold, color = Color(0xFF1E4D39), fontSize = 15.sp) }
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text("Code Pad", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                    Text(Sync.status.ifBlank { "Henüz eşitlenmedi" }, fontSize = 11.sp, color = muted, maxLines = 1)
+                }
             }
-            Spacer(Modifier.height(6.dp))
-            OutlinedButton(
-                onClick = { mode = if (mode == "assistant") "notes" else "assistant" },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text(if (mode == "assistant") "Notlara dön" else "Asistan (Ctrl+H)") }
-            Spacer(Modifier.height(6.dp))
-            OutlinedButton(onClick = { showSettings = true }, modifier = Modifier.fillMaxWidth()) { Text("Ayarlar") }
+            Spacer(Modifier.height(12.dp))
+            val pillBg = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+            @Composable
+            fun Pill(label: String, hint: String = "", onClick: () -> Unit) {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(pillBg).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                    if (hint.isNotEmpty()) Text(hint, fontSize = 11.sp, color = muted)
+                }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Pill(if (mode == "assistant") "Notlara dön" else "✦ Asistan", "Ctrl+H") { mode = if (mode == "assistant") "notes" else "assistant" }
+                Pill("⟳ Eşitle") { Sync.runNow() }
+                Pill("⚙ Ayarlar") { showSettings = true }
+                Pill("Çıkış yap", onClick = onLogout)
+            }
             Spacer(Modifier.height(16.dp))
             Text("DEFTERLER", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = muted)
-            Spacer(Modifier.height(6.dp))
-            Button(
+            Spacer(Modifier.height(8.dp))
+            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(nbs) { item ->
+                    val active = item.id == currentNb && mode == "notes"
+                    val bg = coverBg(item.cover)
+                    val dark = bg.luminance() < 0.4f
+                    val fg = if (dark) Color.White else Color(0xFF1E4D39)
+                    val count = Store.notes.count { it.nbId == item.id && !it.deleted }
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(bg)
+                            .then(if (active) Modifier.border(2.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp)) else Modifier)
+                            .clickable {
+                                selNb = item.id
+                                selNote = null
+                                mode = "notes"
+                            }
+                            .padding(14.dp),
+                    ) {
+                        Canvas(Modifier.matchParentSize()) {
+                            val step = 12.dp.toPx()
+                            var x = size.width - 90.dp.toPx()
+                            while (x < size.width) {
+                                var y = step / 2
+                                while (y < size.height) {
+                                    drawCircle(fg.copy(alpha = 0.18f), 1.5.dp.toPx(), Offset(x, y))
+                                    y += step
+                                }
+                                x += step
+                            }
+                        }
+                        Column {
+                            Text(item.name, color = fg, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
+                            Text("$count not", color = fg.copy(alpha = 0.7f), fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
                 onClick = {
                     val n = Store.addNotebook("Yeni defter")
                     selNb = n.id
@@ -346,33 +405,8 @@ fun Workspace(onLogout: () -> Unit) {
                     mode = "notes"
                 },
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("+ Yeni defter") }
-            Spacer(Modifier.height(8.dp))
-            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                items(nbs) { item ->
-                    val active = item.id == currentNb && mode == "notes"
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent)
-                            .clickable {
-                                selNb = item.id
-                                selNote = null
-                                mode = "notes"
-                            }
-                            .padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(Modifier.size(12.dp).clip(CircleShape).background(coverBg(item.cover)).border(1.dp, muted.copy(alpha = 0.4f), CircleShape))
-                        Spacer(Modifier.width(10.dp))
-                        Text(
-                            item.name,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-                        )
-                    }
-                }
-            }
+                shape = RoundedCornerShape(16.dp),
+            ) { Text("+ Yeni defter", fontWeight = FontWeight.Bold) }
         }
 
         if (mode == "assistant") {
