@@ -23,6 +23,9 @@ object Store {
     var userEmail = ""
     var lastSync = 0L
     var ownerId = ""
+    var apiKey = ""
+    var model = DefaultModel
+    val actions = mutableStateListOf<AiAction>()
 
     val hasSession: Boolean get() = accessToken.isNotBlank() && userId.isNotBlank()
 
@@ -39,7 +42,16 @@ object Store {
             userEmail = c.optString("email")
             lastSync = c.optLong("lastSync")
             ownerId = c.optString("owner")
+            apiKey = c.optString("apiKey")
+            model = c.optString("model").ifBlank { DefaultModel }
+            c.optJSONArray("actions")?.let { a ->
+                for (i in 0 until a.length()) {
+                    val o = a.getJSONObject(i)
+                    actions.add(AiAction(o.getString("id"), o.getString("label"), o.getString("instruction")))
+                }
+            }
         }
+        if (actions.isEmpty()) actions.addAll(DefaultActions)
         runCatching {
             val d = JSONObject(dataFile.readText())
             d.optJSONArray("notebooks")?.let { a -> for (i in 0 until a.length()) notebooks.add(parseNb(a.getJSONObject(i))) }
@@ -58,6 +70,9 @@ object Store {
                     .put("email", userEmail)
                     .put("lastSync", lastSync)
                     .put("owner", ownerId)
+                    .put("apiKey", apiKey)
+                    .put("model", model)
+                    .put("actions", JSONArray(actions.map { JSONObject().put("id", it.id).put("label", it.label).put("instruction", it.instruction) }))
                     .toString(),
             )
             dataFile.writeText(

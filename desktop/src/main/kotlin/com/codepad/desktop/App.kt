@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -154,6 +155,7 @@ fun LoginView(onDone: () -> Unit) {
 fun Workspace(onLogout: () -> Unit) {
     var selNb by remember { mutableStateOf<String?>(null) }
     var selNote by remember { mutableStateOf<String?>(null) }
+    var showSettings by remember { mutableStateOf(false) }
 
     val nbs = Store.activeNotebooks()
     val currentNb = selNb?.takeIf { id -> nbs.any { it.id == id } } ?: nbs.firstOrNull()?.id
@@ -168,6 +170,8 @@ fun Workspace(onLogout: () -> Unit) {
                 Button(onClick = { Sync.runNow() }) { Text("Eşitle") }
                 OutlinedButton(onClick = onLogout) { Text("Çıkış") }
             }
+            Spacer(Modifier.height(6.dp))
+            OutlinedButton(onClick = { showSettings = true }, modifier = Modifier.fillMaxWidth()) { Text("Ayarlar") }
             Spacer(Modifier.height(14.dp))
             Button(
                 onClick = {
@@ -231,44 +235,62 @@ fun Workspace(onLogout: () -> Unit) {
 
         // Sağ: editör
         Column(Modifier.weight(1f).fillMaxHeight().padding(16.dp)) {
-            val note = selNote?.let { id -> Store.notes.firstOrNull { it.id == id && !it.deleted } }
-            if (note == null) {
+            val selected = selNote?.let { id -> Store.notes.firstOrNull { it.id == id && !it.deleted } }
+            if (selected == null) {
                 Text("Bir not seç ya da yeni not oluştur.", color = Muted)
             } else {
-                var title by remember(note.id) { mutableStateOf(note.title) }
-                var body by remember(note.id) { mutableStateOf(TextFieldValue(note.content)) }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = title,
-                        onValueChange = {
-                            title = it
-                            Store.updateNote(note.id, it, body.text)
-                        },
-                        singleLine = true,
-                        label = { Text("Başlık") },
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    TextButton(onClick = {
-                        Store.deleteNote(note.id)
-                        selNote = null
-                    }) { Text("Sil") }
-                }
-                Spacer(Modifier.height(10.dp))
-                BasicTextField(
-                    value = body,
-                    onValueChange = { typed ->
-                        val merged = smartEdit(body, typed)
-                        body = merged
-                        Store.updateNote(note.id, title, merged.text)
-                    },
-                    modifier = Modifier.weight(1f).fillMaxWidth().background(Color.White).padding(12.dp),
-                    textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, color = Forest),
-                    cursorBrush = SolidColor(Green),
-                )
+                EditorPane(selected.id)
             }
         }
     }
+
+    if (showSettings) {
+        SettingsDialog(onDismiss = { showSettings = false })
+    }
+}
+
+@Composable
+fun SettingsDialog(onDismiss: () -> Unit) {
+    var key by remember { mutableStateOf(Store.apiKey) }
+    var model by remember { mutableStateOf(Store.model) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Ayarlar") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Gemini API anahtarını Google AI Studio'dan al. Anahtar bu bilgisayarda kayıtlı kalır.",
+                    fontSize = 12.sp,
+                    color = Muted,
+                )
+                OutlinedTextField(
+                    value = key,
+                    onValueChange = { key = it },
+                    singleLine = true,
+                    label = { Text("API anahtarı") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.width(420.dp),
+                )
+                OutlinedTextField(
+                    value = model,
+                    onValueChange = { model = it },
+                    singleLine = true,
+                    label = { Text("Model adı") },
+                    modifier = Modifier.width(420.dp),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                Store.apiKey = key.trim()
+                Store.model = model.trim().ifBlank { DefaultModel }
+                Store.save()
+                onDismiss()
+            }) { Text("Kaydet") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } },
+    )
+}
 }
 
 /** Parantez/tırnak otomatik kapanır, kapanış karakteri üzerine yazılır, Enter girintiyi korur. */
