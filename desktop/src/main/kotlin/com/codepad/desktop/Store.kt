@@ -7,7 +7,7 @@ import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 
-/** Yerel veri: %APPDATA%\CodePad içinde iki JSON dosyası. */
+/** Yerel veri: %APPDATA%\CodePad içinde JSON dosyaları. */
 object Store {
     private val dir = File(System.getenv("APPDATA") ?: System.getProperty("user.home"), "CodePad").apply { mkdirs() }
     private val dataFile = File(dir, "data.json")
@@ -15,12 +15,14 @@ object Store {
 
     val notebooks = mutableStateListOf<Nb>()
     val notes = mutableStateListOf<Nt>()
+    val cards = mutableStateListOf<Cd>()
 
     var accessToken = ""
     var refreshToken = ""
     var userId = ""
     var userEmail = ""
     var lastSync = 0L
+    var ownerId = ""
 
     val hasSession: Boolean get() = accessToken.isNotBlank() && userId.isNotBlank()
 
@@ -36,13 +38,13 @@ object Store {
             userId = c.optString("user")
             userEmail = c.optString("email")
             lastSync = c.optLong("lastSync")
+            ownerId = c.optString("owner")
         }
         runCatching {
             val d = JSONObject(dataFile.readText())
-            val nbs = d.getJSONArray("notebooks")
-            for (i in 0 until nbs.length()) notebooks.add(parseNb(nbs.getJSONObject(i)))
-            val nts = d.getJSONArray("notes")
-            for (i in 0 until nts.length()) notes.add(parseNt(nts.getJSONObject(i)))
+            d.optJSONArray("notebooks")?.let { a -> for (i in 0 until a.length()) notebooks.add(parseNb(a.getJSONObject(i))) }
+            d.optJSONArray("notes")?.let { a -> for (i in 0 until a.length()) notes.add(parseNt(a.getJSONObject(i))) }
+            d.optJSONArray("cards")?.let { a -> for (i in 0 until a.length()) cards.add(parseCd(a.getJSONObject(i))) }
         }
     }
 
@@ -55,19 +57,23 @@ object Store {
                     .put("user", userId)
                     .put("email", userEmail)
                     .put("lastSync", lastSync)
+                    .put("owner", ownerId)
                     .toString(),
             )
             dataFile.writeText(
                 JSONObject()
                     .put("notebooks", JSONArray(notebooks.map { nbJson(it) }))
                     .put("notes", JSONArray(notes.map { ntJson(it) }))
+                    .put("cards", JSONArray(cards.map { cdJson(it) }))
                     .toString(),
             )
         }
     }
 
     fun setSession(s: SupabaseClient.Session) {
-        // Farklı hesaba girildiyse tüm kayıtlar yeniden gönderilsin.
+        // Başka hesaba girildiyse yerel kayıtlara yeni kimlik ver; eski hesabın verisiyle çakışmasın.
+        if (ownerId.isNotBlank() && ownerId != s.userId) renewIds()
+        ownerId = s.userId
         if (s.userId != userId) lastSync = 0L
         accessToken = s.accessToken
         refreshToken = s.refreshToken
@@ -85,18 +91,44 @@ object Store {
         save()
     }
 
+    /** Tüm yerel kayıtlara yeni kimlik verir ve ilişkileri (defter/not) yeni kimliklere çevirir. */
+    private fun renewIds() {
+        val nbMap = notebooks.associate { it.id to UUID.randomUUID().toString() }
+        val noteMap = notes.associate { it.id to UUID.randomUUID().toString() }
+        val nbNew = notebooks.map { it.copy(id = nbMap.getValue(it.id)) }
+        val ntNew = notes.map { it.copy(id = noteMap.getValue(it.id), nbId = nbMap[it.nbId] ?: it.nbId) }
+        val cdNew = cards.mapNotNull { c ->
+            noteMap[c.noteId]?.let { c.copy(id = UUID.randomUUID().toString(), noteId = it) }
+        }
+        notebooks.clear(); notebooks.addAll(nbNew)
+        notes.clear(); notes.addAll(ntNew)
+        cards.clear(); cards.addAll(cdNew)
+        lastSync = 0L
+    }
+
     fun activeNotebooks(): List<Nb> = notebooks.filter { !it.deleted }.sortedBy { it.createdAt }
 
     fun notesIn(nbId: String): List<Nt> =
         notes.filter { !it.deleted && it.nbId == nbId }.sortedByDescending { it.updatedAt }
 
+    fun cardsOf(noteId: String): List<Cd> =
+        cards.filter { !it.deleted && it.noteId == noteId }.sortedBy { it.createdAt }
+
     fun addNotebook(name: String): Nb {
         val now = System.currentTimeMillis()
-        val nb = Nb(UUID.randomUUID().toString(), name, "mint", now, now, false)
+        val nb = Nb(UUID.randomUUID().toString(), name, "mint", "lined", now, now, false)
         notebooks.add(nb)
         save()
         Sync.schedule()
         return nb
+    }
+
+    fun setNotebookStyle(id: String, cover: String, page: String) {
+        val i = notebooks.indexOfFirst { it.id == id }
+        if (i < 0) return
+        notebooks[i] = notebooks[i].copy(cover = cover, page = page, updatedAt = System.currentTimeMillis())
+        save()
+        Sync.schedule()
     }
 
     fun addNote(nbId: String): Nt {
@@ -117,9 +149,12 @@ object Store {
     }
 
     fun deleteNote(id: String) {
+        val now = System.currentTimeMillis()
         val i = notes.indexOfFirst { it.id == id }
-        if (i < 0) return
-        notes[i] = notes[i].copy(deleted = true, updatedAt = System.currentTimeMillis())
+        if (i >= 0) notes[i] = notes[i].copy(deleted = true, updatedAt = now)
+        for (j in cards.indices) {
+            if (cards[j].noteId == id && !cards[j].deleted) cards[j] = cards[j].copy(deleted = true, updatedAt = now)
+        }
         save()
         Sync.schedule()
     }
@@ -128,9 +163,37 @@ object Store {
         val now = System.currentTimeMillis()
         val i = notebooks.indexOfFirst { it.id == id }
         if (i >= 0) notebooks[i] = notebooks[i].copy(deleted = true, updatedAt = now)
+        val noteIds = notes.filter { it.nbId == id && !it.deleted }.map { it.id }.toSet()
         for (j in notes.indices) {
-            if (notes[j].nbId == id && !notes[j].deleted) notes[j] = notes[j].copy(deleted = true, updatedAt = now)
+            if (notes[j].id in noteIds) notes[j] = notes[j].copy(deleted = true, updatedAt = now)
         }
+        for (j in cards.indices) {
+            if (cards[j].noteId in noteIds && !cards[j].deleted) cards[j] = cards[j].copy(deleted = true, updatedAt = now)
+        }
+        save()
+        Sync.schedule()
+    }
+
+    /** Nota AI kartı ekler. */
+    fun addCard(noteId: String, title: String, body: String, section: String = "") {
+        val now = System.currentTimeMillis()
+        cards.add(Cd(UUID.randomUUID().toString(), noteId, section.trim(), title, body, now, now, false))
+        save()
+        Sync.schedule()
+    }
+
+    fun moveCard(id: String, section: String) {
+        val i = cards.indexOfFirst { it.id == id }
+        if (i < 0) return
+        cards[i] = cards[i].copy(section = section.trim(), updatedAt = System.currentTimeMillis())
+        save()
+        Sync.schedule()
+    }
+
+    fun deleteCard(id: String) {
+        val i = cards.indexOfFirst { it.id == id }
+        if (i < 0) return
+        cards[i] = cards[i].copy(deleted = true, updatedAt = System.currentTimeMillis())
         save()
         Sync.schedule()
     }
@@ -144,5 +207,10 @@ object Store {
     fun mergeNt(r: Nt) {
         val i = notes.indexOfFirst { it.id == r.id }
         if (i < 0) notes.add(r) else if (r.updatedAt > notes[i].updatedAt) notes[i] = r
+    }
+
+    fun mergeCd(r: Cd) {
+        val i = cards.indexOfFirst { it.id == r.id }
+        if (i < 0) cards.add(r) else if (r.updatedAt > cards[i].updatedAt) cards[i] = r
     }
 }

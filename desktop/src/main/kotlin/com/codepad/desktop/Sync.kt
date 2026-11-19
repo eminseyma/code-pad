@@ -73,21 +73,27 @@ object Sync {
         val start = System.currentTimeMillis()
         val localNb = Store.notebooks.filter { it.updatedAt > since }.toList()
         val localNt = Store.notes.filter { it.updatedAt > since }.toList()
+        val localCd = Store.cards.filter { it.updatedAt > since }.toList()
 
         val pulled = withContext(Dispatchers.IO) {
             val remoteNb = SupabaseClient.select(token, "notebooks", since).map2 { parseNb(it) }
             val remoteNt = SupabaseClient.select(token, "notes", since).map2 { parseNt(it) }
+            val remoteCd = SupabaseClient.select(token, "note_cards", since).map2 { parseCd(it) }
             // Uzakta daha yeni olan bir kaydın üzerine eski yerel sürümü yazma.
             val newerNb = remoteNb.associateBy { it.id }
             val newerNt = remoteNt.associateBy { it.id }
+            val newerCd = remoteCd.associateBy { it.id }
             val pushNb = localNb.filter { (newerNb[it.id]?.updatedAt ?: -1L) <= it.updatedAt }
             val pushNt = localNt.filter { (newerNt[it.id]?.updatedAt ?: -1L) <= it.updatedAt }
+            val pushCd = localCd.filter { (newerCd[it.id]?.updatedAt ?: -1L) <= it.updatedAt }
             SupabaseClient.upsert(token, "notebooks", JSONArray(pushNb.map { nbJson(it) }))
             SupabaseClient.upsert(token, "notes", JSONArray(pushNt.map { ntJson(it) }))
-            remoteNb to remoteNt
+            SupabaseClient.upsert(token, "note_cards", JSONArray(pushCd.map { cdJson(it) }))
+            Triple(remoteNb, remoteNt, remoteCd)
         }
         pulled.first.forEach { Store.mergeNb(it) }
         pulled.second.forEach { Store.mergeNt(it) }
+        pulled.third.forEach { Store.mergeCd(it) }
         Store.lastSync = start
         Store.save()
     }
