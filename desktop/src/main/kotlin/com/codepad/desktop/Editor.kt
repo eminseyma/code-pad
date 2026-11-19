@@ -34,6 +34,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.text.TextStyle
@@ -146,6 +148,7 @@ fun EditorPane(noteId: String) {
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
                 .background(MaterialTheme.colorScheme.surface)
                 .drawBehind { drawPageStyle(Store.notebooks.firstOrNull { it.id == note.nbId }?.page ?: "lined", Color(0x33808F85)) }
                 .padding(12.dp),

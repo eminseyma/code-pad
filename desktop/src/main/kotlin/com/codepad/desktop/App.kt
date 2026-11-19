@@ -414,29 +414,9 @@ fun Workspace(onLogout: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 val list = currentNb?.let { Store.notesIn(it) }.orEmpty()
                     .filter { query.isBlank() || it.title.contains(query, true) || it.content.contains(query, true) }
-                LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(list) { n ->
-                        val active = n.id == selNote
-                        Column(
-                            Modifier
-                                .fillMaxWidth()
-                                .background(if (active) MaterialTheme.colorScheme.surface else Color.Transparent)
-                                .clickable { selNote = n.id }
-                                .padding(10.dp),
-                        ) {
-                            Text(
-                                n.title.ifBlank { "Başlıksız not" },
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                            )
-                            Text(
-                                n.content.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty(),
-                                fontSize = 12.sp,
-                                color = muted,
-                                maxLines = 1,
-                            )
-                        }
+                        NoteCardDesk(n, n.id == selNote) { selNote = n.id }
                     }
                 }
             }

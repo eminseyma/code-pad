@@ -30,6 +30,9 @@ compose.desktop {
             targetFormats(TargetFormat.AppImage)
             packageName = "CodePad"
             packageVersion = "1.0.0"
+            windows {
+                iconFile.set(project.file("icon/codepad.ico"))
+            }
         }
     }
 }
