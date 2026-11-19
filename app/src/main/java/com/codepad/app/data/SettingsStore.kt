@@ -65,6 +65,11 @@ class SettingsStore(context: Context) {
         get() = prefs.getLong(KEY_LAST_SYNC, 0L)
         set(value) = prefs.edit().putLong(KEY_LAST_SYNC, value).apply()
 
+    /** Yerel kayıtların sahibi olan son hesap. Çıkış yapınca silinmez. */
+    var ownerId: String
+        get() = prefs.getString(KEY_OWNER, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_OWNER, value).apply()
+
     val hasSession: Boolean get() = accessToken.isNotBlank() && userId.isNotBlank()
 
     fun saveSession(s: com.codepad.app.sync.SupabaseClient.Session) {
@@ -111,6 +116,7 @@ class SettingsStore(context: Context) {
         private const val KEY_USER = "sb_user"
         private const val KEY_EMAIL = "sb_email"
         private const val KEY_LAST_SYNC = "sb_last_sync"
+        private const val KEY_OWNER = "sb_owner"
 
         // Google model adlarını zaman zaman günceller; ayarlardan değiştirilebilir.
         const val DEFAULT_MODEL = "gemini-3.6-flash"

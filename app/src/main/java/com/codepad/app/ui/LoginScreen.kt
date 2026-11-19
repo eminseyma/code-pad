@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +41,7 @@ fun LoginScreen(vm: AppViewModel, onDone: () -> Unit) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var create by remember { mutableStateOf(false) }
+    var showReset by remember { mutableStateOf(false) }
 
     Column(
         Modifier.fillMaxSize().padding(24.dp),
@@ -96,6 +98,75 @@ fun LoginScreen(vm: AppViewModel, onDone: () -> Unit) {
         TextButton(onClick = { create = !create }) {
             Text(if (create) "Zaten hesabım var" else "Hesabım yok, oluştur")
         }
+        if (!create) {
+            TextButton(onClick = { showReset = true }) { Text("Şifremi unuttum") }
+        }
         TextButton(onClick = onDone) { Text("Şimdilik sadece bu telefonda kullan") }
     }
+
+    if (showReset) {
+        ResetPasswordDialog(
+            vm = vm,
+            initialEmail = email,
+            onDismiss = { showReset = false },
+            onDone = {
+                showReset = false
+                onDone()
+            },
+        )
+    }
+}
+
+@Composable
+private fun ResetPasswordDialog(vm: AppViewModel, initialEmail: String, onDismiss: () -> Unit, onDone: () -> Unit) {
+    var email by remember { mutableStateOf(initialEmail) }
+    var sent by remember { mutableStateOf(false) }
+    var code by remember { mutableStateOf("") }
+    var newPass by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (!sent) "Şifreni sıfırla" else "Kodu ve yeni şifreni gir") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (!sent) {
+                    Text("E-posta adresine 6 haneli bir kod gönderelim.", fontSize = 13.sp)
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = { email = it },
+                        label = { Text("E-posta") },
+                        singleLine = true,
+                    )
+                } else {
+                    Text("$email adresine gelen kodu yaz ve yeni şifreni belirle.", fontSize = 13.sp)
+                    OutlinedTextField(
+                        value = code,
+                        onValueChange = { code = it },
+                        label = { Text("Kod") },
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = newPass,
+                        onValueChange = { newPass = it },
+                        label = { Text("Yeni şifre (en az 6 karakter)") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
+                }
+                if (vm.authError.isNotBlank()) {
+                    Text(vm.authError, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !vm.authBusy && (!sent && email.isNotBlank() || sent && code.isNotBlank() && newPass.length >= 6),
+                onClick = {
+                    if (!sent) vm.sendRecoveryCode(email) { sent = true }
+                    else vm.completeRecovery(email, code, newPass, onDone)
+                },
+            ) { Text(if (!sent) "Kod gönder" else "Şifreyi değiştir") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } },
+    )
 }

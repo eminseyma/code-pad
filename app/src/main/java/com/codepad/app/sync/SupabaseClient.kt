@@ -55,6 +55,8 @@ object SupabaseClient {
             msg.contains("Invalid login credentials", true) -> "E-posta veya şifre hatalı."
             msg.contains("already registered", true) -> "Bu e-posta ile zaten bir hesap var. Giriş yap."
             msg.contains("Password should be", true) -> "Şifre en az 6 karakter olmalı."
+            msg.contains("Email not confirmed", true) -> "E-posta henüz onaylanmamış. Supabase'de bu kullanıcıyı onaylamalısın."
+            msg.contains("rate limit", true) || msg.contains("too many", true) -> "Çok fazla deneme yapıldı. Birkaç dakika sonra tekrar dene."
             msg.isNotBlank() -> msg
             else -> "Sunucu hatası ($code)."
         }
@@ -69,6 +71,22 @@ object SupabaseClient {
     fun signIn(email: String, password: String): Session {
         val body = JSONObject().put("email", email).put("password", password).toString()
         return parseSession(call("POST", "$BASE_URL/auth/v1/token?grant_type=password", body))
+    }
+
+    /** Şifre sıfırlama kodunu e-postaya gönderir. */
+    fun sendRecoveryCode(email: String) {
+        call("POST", "$BASE_URL/auth/v1/recover", JSONObject().put("email", email).toString())
+    }
+
+    /** E-postaya gelen kodu doğrular ve oturum açar. */
+    fun verifyRecovery(email: String, code: String): Session {
+        val body = JSONObject().put("type", "recovery").put("email", email).put("token", code).toString()
+        return parseSession(call("POST", "$BASE_URL/auth/v1/verify", body))
+    }
+
+    /** Oturum açıldıktan sonra yeni şifreyi kaydeder. */
+    fun updatePassword(accessToken: String, newPassword: String) {
+        call("PUT", "$BASE_URL/auth/v1/user", JSONObject().put("password", newPassword).toString(), accessToken)
     }
 
     /** Süresi dolan erişim jetonunu yeniler. */

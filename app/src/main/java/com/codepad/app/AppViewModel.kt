@@ -123,9 +123,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 if (create) SupabaseClient.signUp(email.trim(), password)
                 else SupabaseClient.signIn(email.trim(), password)
             }
-            settings.saveSession(session)
-            loggedIn = true
-            userEmail = session.email
+            adoptSession(session)
             onDone()
             runSync()
         } catch (e: Exception) {
@@ -133,6 +131,54 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         } finally {
             authBusy = false
         }
+    }
+
+    /** Kurtarma kodunu e-postaya gönderir. */
+    fun sendRecoveryCode(email: String, onSent: () -> Unit) = viewModelScope.launch {
+        authBusy = true
+        authError = ""
+        try {
+            withContext(Dispatchers.IO) { SupabaseClient.sendRecoveryCode(email.trim()) }
+            onSent()
+        } catch (e: Exception) {
+            authError = e.message ?: "Kod gönderilemedi"
+        } finally {
+            authBusy = false
+        }
+    }
+
+    /** E-postadaki kodla yeni şifre belirler ve oturum açar. */
+    fun completeRecovery(email: String, code: String, newPassword: String, onDone: () -> Unit) = viewModelScope.launch {
+        authBusy = true
+        authError = ""
+        try {
+            val session = withContext(Dispatchers.IO) {
+                val s = SupabaseClient.verifyRecovery(email.trim(), code.trim())
+                SupabaseClient.updatePassword(s.accessToken, newPassword)
+                s
+            }
+            adoptSession(session)
+            onDone()
+            runSync()
+        } catch (e: Exception) {
+            authError = e.message ?: "Şifre değiştirilemedi"
+        } finally {
+            authBusy = false
+        }
+    }
+
+    /** Oturumu kaydeder. Yerel kayıtlar başka bir hesaba aitse her kayda yeni bulut kimliği verir. */
+    private suspend fun adoptSession(session: SupabaseClient.Session) {
+        if (settings.ownerId.isNotBlank() && settings.ownerId != session.userId) {
+            dao.resetNotebookSyncIds()
+            dao.resetNoteSyncIds()
+            dao.resetCardSyncIds()
+            dao.clearAllTombstones()
+        }
+        settings.ownerId = session.userId
+        settings.saveSession(session)
+        loggedIn = true
+        userEmail = session.email
     }
 
     /** Çıkış yapar. Telefondaki notlar kalır ama artık senkronize edilmez. */

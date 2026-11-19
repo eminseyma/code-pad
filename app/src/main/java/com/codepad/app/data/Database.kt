@@ -221,6 +221,18 @@ interface NoteDao {
     @Query("DELETE FROM note_cards WHERE syncId = :syncId")
     suspend fun deleteCardBySync(syncId: String)
 
+    @Query("UPDATE notebooks SET syncId = lower(hex(randomblob(16)))")
+    suspend fun resetNotebookSyncIds()
+
+    @Query("UPDATE notes SET syncId = lower(hex(randomblob(16)))")
+    suspend fun resetNoteSyncIds()
+
+    @Query("UPDATE note_cards SET syncId = lower(hex(randomblob(16)))")
+    suspend fun resetCardSyncIds()
+
+    @Query("DELETE FROM tombstones")
+    suspend fun clearAllTombstones()
+
     @Query("DELETE FROM notebooks")
     suspend fun clearNotebooks()
 
