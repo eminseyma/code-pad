@@ -26,6 +26,9 @@ object Store {
     var apiKey = ""
     var model = DefaultModel
     val actions = mutableStateListOf<AiAction>()
+    var theme = "mint"
+    val sessions = mutableStateListOf<ChatSess>()
+    val messages = mutableStateListOf<ChatMsg>()
 
     val hasSession: Boolean get() = accessToken.isNotBlank() && userId.isNotBlank()
 
@@ -43,6 +46,7 @@ object Store {
             lastSync = c.optLong("lastSync")
             ownerId = c.optString("owner")
             apiKey = c.optString("apiKey")
+            theme = c.optString("theme", "mint")
             model = c.optString("model").ifBlank { DefaultModel }
             c.optJSONArray("actions")?.let { a ->
                 for (i in 0 until a.length()) {
@@ -57,6 +61,8 @@ object Store {
             d.optJSONArray("notebooks")?.let { a -> for (i in 0 until a.length()) notebooks.add(parseNb(a.getJSONObject(i))) }
             d.optJSONArray("notes")?.let { a -> for (i in 0 until a.length()) notes.add(parseNt(a.getJSONObject(i))) }
             d.optJSONArray("cards")?.let { a -> for (i in 0 until a.length()) cards.add(parseCd(a.getJSONObject(i))) }
+            d.optJSONArray("sessions")?.let { a -> for (i in 0 until a.length()) sessions.add(parseSess(a.getJSONObject(i))) }
+            d.optJSONArray("messages")?.let { a -> for (i in 0 until a.length()) messages.add(parseMsg(a.getJSONObject(i))) }
         }
     }
 
@@ -72,6 +78,7 @@ object Store {
                     .put("owner", ownerId)
                     .put("apiKey", apiKey)
                     .put("model", model)
+                    .put("theme", theme)
                     .put("actions", JSONArray(actions.map { JSONObject().put("id", it.id).put("label", it.label).put("instruction", it.instruction) }))
                     .toString(),
             )
@@ -80,6 +87,8 @@ object Store {
                     .put("notebooks", JSONArray(notebooks.map { nbJson(it) }))
                     .put("notes", JSONArray(notes.map { ntJson(it) }))
                     .put("cards", JSONArray(cards.map { cdJson(it) }))
+                    .put("sessions", JSONArray(sessions.map { sessJson(it) }))
+                    .put("messages", JSONArray(messages.map { msgJson(it) }))
                     .toString(),
             )
         }
@@ -119,6 +128,24 @@ object Store {
         notes.clear(); notes.addAll(ntNew)
         cards.clear(); cards.addAll(cdNew)
         lastSync = 0L
+    }
+
+    fun newSession(title: String): ChatSess {
+        val s = ChatSess(UUID.randomUUID().toString(), title.ifBlank { "Yeni sohbet" }.take(40), System.currentTimeMillis())
+        sessions.add(s)
+        save()
+        return s
+    }
+
+    fun deleteSession(id: String) {
+        sessions.removeAll { it.id == id }
+        messages.removeAll { it.sessionId == id }
+        save()
+    }
+
+    fun addMessage(sessionId: String, role: String, text: String) {
+        messages.add(ChatMsg(UUID.randomUUID().toString(), sessionId, role, text, System.currentTimeMillis()))
+        save()
     }
 
     fun activeNotebooks(): List<Nb> = notebooks.filter { !it.deleted }.sortedBy { it.createdAt }
