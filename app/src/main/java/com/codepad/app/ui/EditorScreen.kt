@@ -218,6 +218,14 @@ fun EditorScreen(vm: AppViewModel, noteId: Long, onBack: () -> Unit) {
                     colors = transparent,
                 )
             }
+            val wordCount = content.text.split(Regex("\\s+")).count { it.isNotBlank() }
+            val lineCount = if (content.text.isEmpty()) 0 else content.text.count { it == '\n' } + 1
+            Text(
+                "$wordCount kelime · $lineCount satır",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 16.dp, bottom = 8.dp),
+            )
 
             }
 

@@ -1,5 +1,6 @@
 package com.codepad.desktop
 
+import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.background
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
@@ -300,6 +301,7 @@ fun Workspace(onLogout: () -> Unit) {
     var mode by remember { mutableStateOf("notes") }
     var query by remember { mutableStateOf("") }
     var showSettings by remember { mutableStateOf(false) }
+    var showQuick by remember { mutableStateOf(false) }
     var showStyle by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
@@ -326,6 +328,10 @@ fun Workspace(onLogout: () -> Unit) {
                     }
                     Key.F -> {
                         mode = "notes"
+                        true
+                    }
+                    Key.K -> {
+                        showQuick = true
                         true
                     }
                     Key.H -> {
@@ -378,6 +384,7 @@ fun Workspace(onLogout: () -> Unit) {
             }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Pill(if (mode == "assistant") "Notlara dön" else "✦ Asistan", "Ctrl+H") { mode = if (mode == "assistant") "notes" else "assistant" }
+                Pill("⌕ Hızlı ara", "Ctrl+K") { showQuick = true }
                 Pill("⟳ Eşitle") { Sync.runNow() }
                 Pill("⚙ Ayarlar") { showSettings = true }
                 Pill("Çıkış yap", onClick = onLogout)
@@ -533,6 +540,18 @@ fun Workspace(onLogout: () -> Unit) {
         }
     }
 
+    if (showQuick) {
+        QuickSwitcher(
+            onPick = { n ->
+                selNb = n.nbId
+                selNote = n.id
+                mode = "notes"
+                query = ""
+                showQuick = false
+            },
+            onDismiss = { showQuick = false },
+        )
+    }
     if (showSettings) {
         SettingsDialog(onDismiss = { showSettings = false })
     }
@@ -809,4 +828,45 @@ fun pairDelete(old: TextFieldValue, new: TextFieldValue): TextFieldValue? {
     val open = old.text[p]
     if (SMART_PAIRS[open] == null || old.text.getOrNull(p + 1) != SMART_PAIRS.getValue(open)) return null
     return TextFieldValue(old.text.removeRange(p, p + 2), TextRange(p))
+}
+
+/** Ctrl+K: tüm defterlerdeki notlar arasında hızlı arama ve geçiş. */
+@Composable
+private fun QuickSwitcher(onPick: (Nt) -> Unit, onDismiss: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    var q by remember { mutableStateOf("") }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    val results = Store.notes
+        .filter { !it.deleted && (q.isBlank() || it.title.contains(q, true) || it.content.contains(q, true)) }
+        .sortedByDescending { it.updatedAt }
+        .take(8)
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(24.dp), color = cs.background, shadowElevation = 12.dp, modifier = Modifier.width(560.dp)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = q,
+                    onValueChange = { q = it },
+                    singleLine = true,
+                    label = { Text("Tüm defterlerde ara (Enter: ilk sonuç)") },
+                    modifier = Modifier.fillMaxWidth().focusRequester(focus).onPreviewKeyEvent { e: KeyEvent ->
+                        if (e.key == Key.Enter && e.type == KeyEventType.KeyDown) {
+                            results.firstOrNull()?.let(onPick)
+                            true
+                        } else {
+                            false
+                        }
+                    },
+                )
+                if (results.isEmpty()) {
+                    Text("Sonuç yok", color = cs.onSurfaceVariant, modifier = Modifier.padding(8.dp))
+                }
+                results.forEach { n ->
+                    val nbName = Store.notebooks.firstOrNull { it.id == n.nbId }?.name.orEmpty()
+                    Text(nbName, fontSize = 11.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 6.dp))
+                    NoteCardDesk(n, false) { onPick(n) }
+                }
+            }
+        }
+    }
 }

@@ -180,6 +180,15 @@ fun EditorPane(noteId: String) {
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         )
 
+        val words = body.text.split(Regex("\\s+")).count { it.isNotBlank() }
+        val lines = if (body.text.isEmpty()) 0 else body.text.count { it == '\n' } + 1
+        Text(
+            "$words kelime · $lines satır · ${body.text.length} karakter",
+            fontSize = 11.sp,
+            color = Muted,
+            modifier = Modifier.padding(start = 6.dp, top = 4.dp),
+        )
+
         // Kartlar (bölümlere göre)
         Spacer(Modifier.height(10.dp))
         CardsPanel(
