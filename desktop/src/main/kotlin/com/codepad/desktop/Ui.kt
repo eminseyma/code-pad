@@ -1,5 +1,12 @@
 package com.codepad.desktop
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -287,5 +294,38 @@ fun EmptyState(title: String, subtitle: String, modifier: Modifier = Modifier, s
         Text(title, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = cs.onSurface, textAlign = TextAlign.Center)
         Spacer(Modifier.height(4.dp))
         Text(subtitle, fontSize = 13.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center)
+    }
+}
+
+/** Not silinince altta çıkan "Geri al" çubuğu (6 sn sonra kaybolur). */
+@Composable
+fun UndoBar(modifier: Modifier = Modifier) {
+    val cs = MaterialTheme.colorScheme
+    val id = Store.lastDeleted
+    LaunchedEffect(id) {
+        if (id != null) {
+            delay(6_000)
+            if (Store.lastDeleted == id) Store.lastDeleted = null
+        }
+    }
+    AnimatedVisibility(
+        visible = id != null,
+        modifier = modifier.padding(20.dp),
+        enter = fadeIn() + slideInVertically { it / 2 },
+        exit = fadeOut(),
+    ) {
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(16.dp))
+                .background(cs.inverseSurface)
+                .padding(start = 18.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Not silindi", color = cs.inverseOnSurface, fontSize = 13.sp)
+            Spacer(Modifier.width(8.dp))
+            GButton(onClick = { id?.let { Store.restoreNote(it) } }) {
+                Text("GERİ AL", color = cs.inversePrimary, fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }

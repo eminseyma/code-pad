@@ -6,6 +6,12 @@ import com.codepad.desktop.ai.GeminiClient
 /** Editörde görünen AI eylemi. Kullanıcı düzenleyebilir (telefonla aynı varsayılanlar). */
 data class AiAction(val id: String, val label: String, val instruction: String)
 
+val QuizAction = AiAction(
+    "quiz",
+    "Quiz hazırla",
+    "Bu nottan öğrenmeyi ölçen 5 çoktan seçmeli soru hazırla. Her soruda 4 şık (A-D) ver; cevap anahtarını ve kısa gerekçeyi en sonda yaz.",
+)
+
 val DefaultActions = listOf(
     AiAction("explain", "Açıkla", "Notu bir yazılım öğrencisine anlatır gibi sade Türkçe ile açıkla. Kısa ol."),
     AiAction("summary", "Özetle", "Notu en fazla 5 maddede özetle."),
@@ -13,6 +19,7 @@ val DefaultActions = listOf(
     AiAction("expand", "Uzat", "Metni örneklerle ve açıklamalarla zenginleştirerek uzat. Sadece uzatılmış metni ver."),
     AiAction("example", "Örnek ekle", "Konuya uygun, kısa ve çalışır bir kod örneği yaz. Kodu ``` kod bloğu içinde ver."),
     AiAction("bugs", "Hata bul", "Kodda hata, eksik ya da yanlış bilgi var mı? Varsa düzeltmesiyle kısaca açıkla."),
+    QuizAction,
 )
 
 const val DefaultModel = "gemini-3.6-flash"

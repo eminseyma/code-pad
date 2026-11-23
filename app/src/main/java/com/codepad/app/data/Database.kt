@@ -51,6 +51,7 @@ data class Note(
     val content: String = "",
     val updatedAt: Long = System.currentTimeMillis(),
     @ColumnInfo(defaultValue = "''") val syncId: String = UUID.randomUUID().toString(),
+    @ColumnInfo(defaultValue = "0") val pinned: Boolean = false,
 )
 
 /** Nottaki AI kartı. section boşsa "bölümsüz" demektir. */
@@ -136,10 +137,10 @@ interface NoteDao {
     @Delete
     suspend fun deleteNotebook(notebook: Notebook)
 
-    @Query("SELECT * FROM notes WHERE notebookId = :notebookId ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM notes WHERE notebookId = :notebookId ORDER BY pinned DESC, updatedAt DESC")
     fun notesIn(notebookId: Long): Flow<List<Note>>
 
-    @Query("SELECT * FROM notes ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM notes ORDER BY pinned DESC, updatedAt DESC")
     fun allNotesFlow(): Flow<List<Note>>
 
     @Query("SELECT * FROM notes")
@@ -291,6 +292,13 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
     }
 }
 
+/** v5 -> v6: not sabitleme. */
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `notes` ADD COLUMN `pinned` INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
 /** v2 -> v3: sohbet geçmişi tabloları. */
 val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(db: SupportSQLiteDatabase) {
@@ -315,7 +323,7 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
 
 @Database(
     entities = [Notebook::class, Note::class, NoteCard::class, ChatSession::class, SavedMessage::class, Tombstone::class],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -330,7 +338,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "codepad.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build().also { instance = it }
             }
     }
 }

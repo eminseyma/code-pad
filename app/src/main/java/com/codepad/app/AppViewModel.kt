@@ -266,11 +266,36 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         dao.upsertNote(note.copy(updatedAt = System.currentTimeMillis()))
     }
 
-    fun deleteNote(note: Note) = viewModelScope.launch {
+    /** Son silinen not (geri alınabilmesi için kartlarıyla birlikte tutulur). */
+    var pendingUndo by mutableStateOf<DeletedNote?>(null)
+        private set
+
+    fun clearUndo() {
+        pendingUndo = null
+    }
+
+    fun togglePin(note: Note) = viewModelScope.launch {
+        dao.upsertNote(note.copy(pinned = !note.pinned, updatedAt = System.currentTimeMillis()))
+    }
+
+    fun deleteNote(note: Note, undoable: Boolean = false) = viewModelScope.launch {
         val now = System.currentTimeMillis()
-        dao.allCardsOnce().filter { it.noteId == note.id }.forEach { dao.addTombstone(Tombstone(it.syncId, "card", now)) }
+        val cards = dao.allCardsOnce().filter { it.noteId == note.id }
+        cards.forEach { dao.addTombstone(Tombstone(it.syncId, "card", now)) }
         dao.addTombstone(Tombstone(note.syncId, "note", now))
         dao.deleteNote(note)
+        if (undoable) pendingUndo = DeletedNote(note, cards)
+    }
+
+    fun undoDelete() = viewModelScope.launch {
+        val d = pendingUndo ?: return@launch
+        pendingUndo = null
+        runCatching {
+            val now = System.currentTimeMillis()
+            dao.clearTombstones(listOf(d.note.syncId) + d.cards.map { it.syncId })
+            val newId = dao.upsertNote(d.note.copy(id = 0, updatedAt = now))
+            d.cards.forEach { dao.upsertCard(it.copy(id = 0, noteId = newId, updatedAt = now)) }
+        }
     }
 
     fun updateNotebookStyle(notebook: Notebook, cover: String, page: String) = viewModelScope.launch {
@@ -452,3 +477,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         return ranked.ifEmpty { notes.sortedByDescending { it.updatedAt }.take(5) }
     }
 }
+
+/** Geri alınabilir silinmiş not. */
+data class DeletedNote(val note: Note, val cards: List<NoteCard>)

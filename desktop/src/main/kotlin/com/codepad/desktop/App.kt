@@ -1,5 +1,7 @@
 package com.codepad.desktop
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.background
 import androidx.compose.animation.Crossfade
@@ -34,7 +36,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -302,6 +303,7 @@ fun Workspace(onLogout: () -> Unit) {
     var query by remember { mutableStateOf("") }
     var showSettings by remember { mutableStateOf(false) }
     var showQuick by remember { mutableStateOf(false) }
+    var pickedTag by remember { mutableStateOf<String?>(null) }
     var showStyle by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
@@ -311,6 +313,7 @@ fun Workspace(onLogout: () -> Unit) {
     val nb = nbs.firstOrNull { it.id == currentNb }
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
 
+    Box(Modifier.fillMaxSize()) {
     Row(
         Modifier
             .fillMaxSize()
@@ -496,8 +499,27 @@ fun Workspace(onLogout: () -> Unit) {
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("+ Yeni not  (Ctrl+N)") }
                         Spacer(Modifier.height(8.dp))
-                        val list = currentNb?.let { Store.notesIn(it) }.orEmpty()
+                        val nbNotes = currentNb?.let { Store.notesIn(it) }.orEmpty()
+                        val allTags = nbNotes.flatMap { extractTags(it.content) }
+                            .groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key }
+                        val activeTag = pickedTag?.takeIf { it in allTags }
+                        val list = nbNotes
+                            .filter { activeTag == null || activeTag in extractTags(it.content) }
                             .filter { query.isBlank() || it.title.contains(query, true) || it.content.contains(query, true) }
+                        if (allTags.isNotEmpty()) {
+                            Row(
+                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                allTags.forEach { t ->
+                                    if (t == activeTag) {
+                                        PButton(onClick = { pickedTag = null }, compact = true, shape = RoundedCornerShape(50)) { Text("#$t") }
+                                    } else {
+                                        SButton(onClick = { pickedTag = t }, compact = true, shape = RoundedCornerShape(50)) { Text("#$t") }
+                                    }
+                                }
+                            }
+                        }
                         if (list.isEmpty()) {
                             EmptyState(
                                 if (query.isBlank()) "Bu defter boş" else "Sonuç yok",
@@ -510,7 +532,7 @@ fun Workspace(onLogout: () -> Unit) {
                             Box(Modifier.weight(1f)) {
                                 LazyColumn(Modifier.fillMaxSize().padding(end = 8.dp), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     items(list, key = { it.id }) { n ->
-                                        NoteCardDesk(n, n.id == selNote, Modifier.animateItem()) { selNote = n.id }
+                                        NoteCardDesk(n, n.id == selNote, Modifier.animateItem(), onPin = { Store.togglePin(n.id) }) { selNote = n.id }
                                     }
                                 }
                                 ListScrollbar(listState, Modifier.align(Alignment.CenterEnd))
@@ -538,6 +560,8 @@ fun Workspace(onLogout: () -> Unit) {
                 }
             }
         }
+    }
+    UndoBar(Modifier.align(Alignment.BottomCenter))
     }
 
     if (showQuick) {

@@ -9,6 +9,12 @@ import org.json.JSONObject
 /** Editörde görünen AI eylemi. Kullanıcı bunları düzenleyebilir. */
 data class AiAction(val id: String, val label: String, val instruction: String)
 
+val QuizAction = AiAction(
+    "quiz",
+    "Quiz hazırla",
+    "Bu nottan öğrenmeyi ölçen 5 çoktan seçmeli soru hazırla. Her soruda 4 şık (A-D) ver; cevap anahtarını ve kısa gerekçeyi en sonda yaz.",
+)
+
 val DefaultActions = listOf(
     AiAction("explain", "Açıkla", "Notu bir yazılım öğrencisine anlatır gibi sade Türkçe ile açıkla. Kısa ol."),
     AiAction("summary", "Özetle", "Notu en fazla 5 maddede özetle."),
@@ -16,6 +22,7 @@ val DefaultActions = listOf(
     AiAction("expand", "Uzat", "Metni örneklerle ve açıklamalarla zenginleştirerek uzat. Sadece uzatılmış metni ver."),
     AiAction("example", "Örnek ekle", "Konuya uygun, kısa ve çalışır bir kod örneği yaz. Kodu ``` kod bloğu içinde ver."),
     AiAction("bugs", "Hata bul", "Kodda hata, eksik ya da yanlış bilgi var mı? Varsa düzeltmesiyle kısaca açıkla."),
+    QuizAction,
 )
 
 enum class ThemeChoice { MINT, WHITE, BLACK }
@@ -87,15 +94,25 @@ class SettingsStore(context: Context) {
 
     fun actions(): List<AiAction> {
         val raw = prefs.getString(KEY_ACTIONS, null) ?: return DefaultActions
-        return try {
+        val parsed = try {
             val arr = JSONArray(raw)
             List(arr.length()) { i ->
                 val o = arr.getJSONObject(i)
                 AiAction(o.getString("id"), o.getString("label"), o.getString("instruction"))
             }
         } catch (e: Exception) {
-            DefaultActions
+            return DefaultActions
         }
+        // Yeni varsayılan "Quiz hazırla" eylemini, daha önce kaydedilmiş listelere bir kez ekle.
+        if (!prefs.getBoolean("quiz_added", false)) {
+            prefs.edit().putBoolean("quiz_added", true).apply()
+            if (parsed.none { it.id == "quiz" }) {
+                val withQuiz = parsed + QuizAction
+                saveActions(withQuiz)
+                return withQuiz
+            }
+        }
+        return parsed
     }
 
     fun saveActions(list: List<AiAction>) {

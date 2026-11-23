@@ -86,6 +86,7 @@ object SyncEngine {
                     content = o.optString("content"),
                     updatedAt = remoteTime,
                     syncId = sid,
+                    pinned = o.optBoolean("pinned"),
                 ),
             )
         }
@@ -149,6 +150,7 @@ object SyncEngine {
                         .put("notebook_id", nbSync[n.notebookId])
                         .put("title", n.title)
                         .put("content", n.content)
+                        .put("pinned", n.pinned)
                         .put("updated_at", n.updatedAt)
                         .put("deleted", false),
                 )

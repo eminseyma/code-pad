@@ -1,5 +1,12 @@
 package com.codepad.desktop
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.unit.dp
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.hoverable
@@ -18,7 +25,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -29,7 +35,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 private val BadgeGreen = Color(0xFF1E4D39)
@@ -83,7 +88,7 @@ fun NoteBadgeDesk(content: String) {
 
 /** Not listesindeki yuvarlak kart (telefondaki NoteRow ile aynı düzen); üzerine gelince canlanır. */
 @Composable
-fun NoteCardDesk(n: Nt, active: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun NoteCardDesk(n: Nt, active: Boolean, modifier: Modifier = Modifier, onPin: (() -> Unit)? = null, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val muted = cs.onSurfaceVariant
     val src = remember { MutableInteractionSource() }
@@ -129,5 +134,23 @@ fun NoteCardDesk(n: Nt, active: Boolean, modifier: Modifier = Modifier, onClick:
                 maxLines = 1,
             )
         }
+        if (onPin != null && (hov || n.pinned)) {
+            IBtn(onClick = onPin, tooltip = if (n.pinned) "Sabitlemeyi kaldır" else "Sabitle") {
+                Icon(
+                    if (n.pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                    contentDescription = "Sabitle",
+                    tint = if (n.pinned) cs.primary else LocalContentColor.current,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
     }
+}
+
+private val TagRe = Regex("(?<![\\w#])#([\\p{L}][\\p{L}\\p{N}_-]{1,29})")
+
+/** Not metnindeki #etiket'leri (kod blokları hariç) küçük harfle listeler. */
+fun extractTags(content: String): List<String> {
+    val outside = content.replace(Regex("```[\\s\\S]*?(```|$)"), " ")
+    return TagRe.findAll(outside).map { it.groupValues[1].lowercase() }.distinct().toList()
 }

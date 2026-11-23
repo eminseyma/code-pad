@@ -1,5 +1,9 @@
 package com.codepad.desktop
 
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
@@ -15,7 +19,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -63,6 +66,24 @@ private val Muted = Color(0xFF5E7568)
 /** AI sonucu: etiket, metin ve çalıştırıldığı seçim aralığı. */
 private data class AiResult(val label: String, val text: String, val selStart: Int, val selEnd: Int, val hadSelection: Boolean)
 
+/** Notu (ve kartlarını) .md dosyası olarak kaydeder. */
+private fun exportMarkdown(title: String, text: String, cards: List<Cd>) {
+    val dialog = java.awt.FileDialog(null as java.awt.Frame?, "Markdown olarak kaydet", java.awt.FileDialog.SAVE)
+    dialog.file = title.replace(Regex("[^\\p{L}\\p{N}_ -]"), "").trim().ifBlank { "not" } + ".md"
+    dialog.isVisible = true
+    val dir = dialog.directory ?: return
+    val name = dialog.file ?: return
+    val md = buildString {
+        append("# ").append(title.ifBlank { "Not" }).append("\n\n").append(text)
+        cards.groupBy { it.section }.forEach { (section, list) ->
+            append("\n\n")
+            if (section.isNotBlank()) append("## ").append(section).append("\n")
+            list.forEach { append("\n### ").append(it.title).append("\n").append(it.body).append("\n") }
+        }
+    }
+    runCatching { java.io.File(dir, name).writeText(md, Charsets.UTF_8) }
+}
+
 @Composable
 fun EditorPane(noteId: String) {
     val note = Store.notes.firstOrNull { it.id == noteId && !it.deleted } ?: return
@@ -71,6 +92,7 @@ fun EditorPane(noteId: String) {
     var title by remember(noteId) { mutableStateOf(note.title) }
     var body by remember(noteId) { mutableStateOf(TextFieldValue(note.content)) }
     var busy by remember { mutableStateOf(false) }
+    var preview by remember(noteId) { mutableStateOf(false) }
     var copied by remember(noteId) { mutableStateOf(false) }
     LaunchedEffect(copied) {
         if (copied) {
@@ -135,6 +157,12 @@ fun EditorPane(noteId: String) {
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+            IBtn(onClick = { preview = !preview }, tooltip = if (preview) "Düzenle" else "Önizle (okuma modu)") {
+                Icon(if (preview) Icons.Outlined.Edit else Icons.Outlined.Visibility, contentDescription = "Önizle")
+            }
+            IBtn(onClick = { exportMarkdown(title, body.text, Store.cardsOf(note.id)) }, tooltip = "Markdown (.md) olarak kaydet") {
+                Icon(Icons.Outlined.FileDownload, contentDescription = "Dışa aktar")
+            }
             IBtn(onClick = {
                 val text = (if (title.isBlank()) "Not" else title) + "\n\n" + body.text
                 Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null)
@@ -166,6 +194,16 @@ fun EditorPane(noteId: String) {
 
         // Metin
         Spacer(Modifier.height(10.dp))
+        if (preview) {
+            Box(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(16.dp),
+            ) { MarkdownView(body.text, Modifier.fillMaxSize()) }
+        } else {
         BasicTextField(
             value = body,
             onValueChange = { typed -> saveBody(smartEdit(body, typed)) },
@@ -179,6 +217,7 @@ fun EditorPane(noteId: String) {
             textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface),
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         )
+        }
 
         val words = body.text.split(Regex("\\s+")).count { it.isNotBlank() }
         val lines = if (body.text.isEmpty()) 0 else body.text.count { it == '\n' } + 1

@@ -1,5 +1,11 @@
 package com.codepad.app.ui
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -90,6 +96,34 @@ fun NoteBadge(content: String) {
                         .clip(RoundedCornerShape(2.dp))
                         .background(colors.fg.copy(alpha = 0.45f)),
                 )
+            }
+        }
+    }
+}
+
+private val TagRegex = Regex("""(?<![\w#])#([\p{L}][\p{L}\p{N}_-]{1,29})""")
+
+/** Not metnindeki #etiket'leri (kod blokları hariç) küçük harfle listeler. */
+fun extractTags(content: String): List<String> {
+    val outside = parseBlocks(content).filterIsInstance<Block.Text>().joinToString("\n") { it.text }
+    return TagRegex.findAll(outside).map { it.groupValues[1].lowercase() }.distinct().toList()
+}
+
+/** Yatay kaydırılan etiket süzgeci. */
+@Composable
+fun TagRow(tags: List<String>, selected: String?, onPick: (String) -> Unit) {
+    val primary = MaterialTheme.colorScheme.primary
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        tags.forEach { t ->
+            val on = t == selected
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(if (on) primary else primary.copy(alpha = 0.10f))
+                    .clickable { onPick(t) }
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                Text("#$t", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (on) MaterialTheme.colorScheme.onPrimary else primary)
             }
         }
     }

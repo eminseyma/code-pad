@@ -51,6 +51,7 @@ object Store {
             apiKey = c.optString("apiKey")
             theme = c.optString("theme", "mint")
             model = c.optString("model").ifBlank { DefaultModel }
+            quizAdded = c.optBoolean("quiz_added")
             c.optJSONArray("actions")?.let { a ->
                 for (i in 0 until a.length()) {
                     val o = a.getJSONObject(i)
@@ -59,6 +60,8 @@ object Store {
             }
         }
         if (actions.isEmpty()) actions.addAll(DefaultActions)
+        else if (!quizAdded && actions.none { it.id == "quiz" }) actions.add(QuizAction)
+        quizAdded = true
         runCatching {
             val d = JSONObject(dataFile.readText())
             d.optJSONArray("notebooks")?.let { a -> for (i in 0 until a.length()) notebooks.add(parseNb(a.getJSONObject(i))) }
@@ -82,6 +85,7 @@ object Store {
                     .put("apiKey", apiKey)
                     .put("model", model)
                     .put("theme", theme)
+                    .put("quiz_added", quizAdded)
                     .put("actions", JSONArray(actions.map { JSONObject().put("id", it.id).put("label", it.label).put("instruction", it.instruction) }))
                     .toString(),
             )
@@ -154,7 +158,7 @@ object Store {
     fun activeNotebooks(): List<Nb> = notebooks.filter { !it.deleted }.sortedBy { it.createdAt }
 
     fun notesIn(nbId: String): List<Nt> =
-        notes.filter { !it.deleted && it.nbId == nbId }.sortedByDescending { it.updatedAt }
+        notes.filter { !it.deleted && it.nbId == nbId }.sortedWith(compareByDescending<Nt> { it.pinned }.thenByDescending { it.updatedAt })
 
     fun cardsOf(noteId: String): List<Cd> =
         cards.filter { !it.deleted && it.noteId == noteId }.sortedBy { it.createdAt }
@@ -193,7 +197,37 @@ object Store {
         Sync.schedule()
     }
 
+    private var quizAdded = false
+
+    /** Son silinen notun kimliği (geri al çubuğu için). */
+    var lastDeleted by mutableStateOf<String?>(null)
+
+    fun togglePin(id: String) {
+        val i = notes.indexOfFirst { it.id == id }
+        if (i < 0) return
+        notes[i] = notes[i].copy(pinned = !notes[i].pinned, updatedAt = System.currentTimeMillis())
+        save()
+        Sync.schedule()
+    }
+
+    fun restoreNote(id: String) {
+        val i = notes.indexOfFirst { it.id == id }
+        if (i < 0) return
+        val deletedAt = notes[i].updatedAt
+        val now = System.currentTimeMillis()
+        notes[i] = notes[i].copy(deleted = false, updatedAt = now)
+        for (j in cards.indices) {
+            if (cards[j].noteId == id && cards[j].deleted && cards[j].updatedAt == deletedAt) {
+                cards[j] = cards[j].copy(deleted = false, updatedAt = now)
+            }
+        }
+        lastDeleted = null
+        save()
+        Sync.schedule()
+    }
+
     fun deleteNote(id: String) {
+        lastDeleted = id
         val now = System.currentTimeMillis()
         val i = notes.indexOfFirst { it.id == id }
         if (i >= 0) notes[i] = notes[i].copy(deleted = true, updatedAt = now)

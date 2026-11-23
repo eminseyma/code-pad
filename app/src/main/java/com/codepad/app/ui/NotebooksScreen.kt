@@ -1,5 +1,10 @@
 package com.codepad.app.ui
 
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -14,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -31,8 +35,6 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -119,7 +121,7 @@ fun NotebooksScreen(
                 item { Text("Henüz not yok. Sağ alttan ilk notunu ekle.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             items(shown, key = { it.id }) { note ->
-                NoteRow(note, notebooks.firstOrNull { it.id == note.notebookId }?.name.orEmpty()) { onOpenNote(note.id) }
+                NoteRow(note, notebooks.firstOrNull { it.id == note.notebookId }?.name.orEmpty(), onPin = { vm.togglePin(note) }) { onOpenNote(note.id) }
             }
         }
 
@@ -208,7 +210,7 @@ private fun NewNotebookTile(modifier: Modifier, onClick: () -> Unit) {
 }
 
 @Composable
-fun NoteRow(note: Note, notebookName: String, onClick: () -> Unit) {
+fun NoteRow(note: Note, notebookName: String, onPin: (() -> Unit)? = null, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -229,6 +231,16 @@ fun NoteRow(note: Note, notebookName: String, onClick: () -> Unit) {
                 maxLines = 1,
             )
             Text(notebookName, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
+        if (onPin != null) {
+            IconButton(onClick = onPin, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    if (note.pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                    contentDescription = if (note.pinned) "Sabitlemeyi kaldır" else "Sabitle",
+                    tint = if (note.pinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
     }
 }
@@ -266,6 +278,12 @@ fun NotebookScreen(
     val notes by remember(notebookId) { vm.notesIn(notebookId) }.collectAsStateWithLifecycle(emptyList())
     var confirmDelete by remember { mutableStateOf(false) }
     var showStyle by remember { mutableStateOf(false) }
+    var pickedTag by remember { mutableStateOf<String?>(null) }
+    val allTags = remember(notes) {
+        notes.flatMap { extractTags(it.content) }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key }
+    }
+    val activeTag = pickedTag?.takeIf { it in allTags }
+    val shownNotes = if (activeTag == null) notes else notes.filter { activeTag in extractTags(it.content) }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -295,8 +313,9 @@ fun NotebookScreen(
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 100.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                if (notes.isEmpty()) item { Text("Bu defterde henüz not yok.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                items(notes, key = { it.id }) { note -> NoteRow(note, "", onClick = { onOpenNote(note.id) }) }
+                if (allTags.isNotEmpty()) item { TagRow(allTags, activeTag) { pickedTag = if (pickedTag == it) null else it } }
+                if (shownNotes.isEmpty()) item { Text("Bu defterde henüz not yok.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                items(shownNotes, key = { it.id }) { note -> NoteRow(note, "", onPin = { vm.togglePin(note) }, onClick = { onOpenNote(note.id) }) }
             }
         }
         ExtendedFloatingActionButton(

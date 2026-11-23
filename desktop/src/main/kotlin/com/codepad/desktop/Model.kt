@@ -21,6 +21,7 @@ data class Nt(
     val content: String,
     val updatedAt: Long,
     val deleted: Boolean,
+    val pinned: Boolean = false,
 )
 
 /** Nottaki AI kartı. section boşsa "bölümsüz". */
@@ -53,6 +54,7 @@ fun parseNt(o: JSONObject) = Nt(
     content = o.optString("content"),
     updatedAt = o.optLong("updated_at"),
     deleted = o.optBoolean("deleted"),
+    pinned = o.optBoolean("pinned"),
 )
 
 fun parseCd(o: JSONObject) = Cd(
@@ -83,6 +85,7 @@ fun ntJson(n: Nt): JSONObject = JSONObject()
     .put("content", n.content)
     .put("updated_at", n.updatedAt)
     .put("deleted", n.deleted)
+    .put("pinned", n.pinned)
 
 fun cdJson(c: Cd): JSONObject = JSONObject()
     .put("id", c.id)

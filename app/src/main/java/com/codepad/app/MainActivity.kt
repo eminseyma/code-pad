@@ -1,5 +1,9 @@
 package com.codepad.app
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Alignment
+import com.codepad.app.ui.UndoBar
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -42,6 +46,7 @@ fun CodePadApp(vm: AppViewModel) {
     val scope = rememberCoroutineScope()
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
+        Box(Modifier.fillMaxSize()) {
         NavHost(nav, startDestination = if (vm.loggedIn) "notebooks" else "login", modifier = Modifier.padding(padding)) {
             composable("login") {
                 LoginScreen(vm, onDone = { nav.navigate("notebooks") { popUpTo("login") { inclusive = true } } })
@@ -70,6 +75,8 @@ fun CodePadApp(vm: AppViewModel) {
             }
             composable("assistant") { AssistantScreen(vm, onBack = { nav.popBackStack() }) }
             composable("settings") { SettingsScreen(vm, onBack = { nav.popBackStack() }) }
+        }
+        UndoBar(vm, Modifier.align(Alignment.BottomCenter))
         }
     }
 }

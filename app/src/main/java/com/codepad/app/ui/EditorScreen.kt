@@ -1,5 +1,8 @@
 package com.codepad.app.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.outlined.FileDownload
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -154,6 +157,20 @@ fun EditorScreen(vm: AppViewModel, noteId: Long, onBack: () -> Unit) {
         content = TextFieldValue(content.text.trimEnd() + "\n\n" + s + "\n")
     }
 
+    fun markdownText(): String = buildString {
+        append("# ").append(title.ifBlank { "Not" }).append("\n\n").append(content.text)
+        cards.groupBy { it.section }.forEach { (section, list) ->
+            append("\n\n")
+            if (section.isNotBlank()) append("## ").append(section).append("\n")
+            list.forEach { append("\n### ").append(it.title).append("\n").append(it.body).append("\n") }
+        }
+    }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri ->
+        if (uri != null) {
+            runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(markdownText().toByteArray(Charsets.UTF_8)) } }
+        }
+    }
+
     fun share() {
         val body = buildString {
             append(title.ifBlank { "Not" }).append("\n\n").append(content.text)
@@ -178,6 +195,10 @@ fun EditorScreen(vm: AppViewModel, noteId: Long, onBack: () -> Unit) {
             IconButton(onClick = { leave() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Geri") }
             Spacer(Modifier.weight(1f))
             IconButton(onClick = { share() }) { Icon(Icons.Outlined.Share, contentDescription = "Paylaş") }
+            IconButton(onClick = {
+                val safe = title.replace(Regex("[^\\p{L}\\p{N}_ -]"), "").trim().ifBlank { "not" }
+                exportLauncher.launch("$safe.md")
+            }) { Icon(Icons.Outlined.FileDownload, contentDescription = "Markdown olarak kaydet") }
             IconButton(onClick = { preview = !preview }) {
                 Icon(
                     if (preview) Icons.Outlined.Edit else Icons.Outlined.Visibility,
@@ -349,7 +370,7 @@ fun EditorScreen(vm: AppViewModel, noteId: Long, onBack: () -> Unit) {
             title = { Text("Not silinsin mi?") },
             confirmButton = {
                 TextButton(onClick = {
-                    note?.let { vm.deleteNote(it) }
+                    note?.let { vm.deleteNote(it, undoable = true) }
                     confirmDelete = false
                     onBack()
                 }) { Text("Sil") }
