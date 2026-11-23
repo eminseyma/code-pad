@@ -1,5 +1,28 @@
 package com.codepad.desktop
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,7 +43,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -44,10 +66,29 @@ import kotlinx.coroutines.launch
 @Composable
 fun AssistantPane(modifier: Modifier) {
     val scope = rememberCoroutineScope()
+    val cs = MaterialTheme.colorScheme
     var current by remember { mutableStateOf<String?>(Store.sessions.maxByOrNull { it.createdAt }?.id) }
     var input by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
+    var failed by remember { mutableStateOf<Pair<String, String>?>(null) }
+
+    fun ask(sid: String, text: String) {
+        busy = true
+        error = ""
+        failed = null
+        scope.launch {
+            val r = Assistant.ask(sid, text)
+            busy = false
+            r.fold(
+                onSuccess = { Store.addMessage(sid, "model", it) },
+                onFailure = {
+                    error = it.message ?: "Asistan yanıt vermedi."
+                    failed = sid to text
+                },
+            )
+        }
+    }
 
     fun send(q: String) {
         val text = q.trim()
@@ -59,85 +100,148 @@ fun AssistantPane(modifier: Modifier) {
         val sid = current ?: Store.newSession(text).id.also { current = it }
         Store.addMessage(sid, "user", text)
         input = ""
-        busy = true
-        error = ""
-        scope.launch {
-            val r = Assistant.ask(sid, text)
-            busy = false
-            r.fold(
-                onSuccess = { Store.addMessage(sid, "model", it) },
-                onFailure = { Store.addMessage(sid, "model", "Hata: ${it.message}") },
-            )
-        }
+        ask(sid, text)
     }
 
-    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val muted = cs.onSurfaceVariant
 
     Row(modifier) {
         Column(Modifier.width(240.dp).fillMaxHeight().padding(12.dp)) {
-            Button(onClick = {
+            PButton(onClick = {
                 current = Store.newSession("").id
                 error = ""
+                failed = null
             }, modifier = Modifier.fillMaxWidth()) { Text("+ Yeni sohbet") }
             Spacer(Modifier.height(8.dp))
-            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                items(Store.sessions.sortedByDescending { it.createdAt }) { s ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .background(if (s.id == current) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent)
-                            .clickable {
-                                current = s.id
-                                error = ""
+            val sessState = rememberLazyListState()
+            Box(Modifier.weight(1f)) {
+                LazyColumn(Modifier.fillMaxSize().padding(end = 8.dp), state = sessState, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    items(Store.sessions.sortedByDescending { it.createdAt }, key = { it.id }) { s ->
+                        val src = remember { MutableInteractionSource() }
+                        val hov by src.collectIsHoveredAsState()
+                        val bg by animateColorAsState(
+                            when {
+                                s.id == current -> cs.primary.copy(alpha = 0.14f)
+                                hov -> cs.primary.copy(alpha = 0.07f)
+                                else -> Color.Transparent
+                            },
+                            tween(130),
+                        )
+                        Row(
+                            Modifier
+                                .animateItem()
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(bg)
+                                .hoverable(src)
+                                .pointerHoverIcon(PointerIcon.Hand)
+                                .clickable(interactionSource = src, indication = null) {
+                                    current = s.id
+                                    error = ""
+                                    failed = null
+                                }
+                                .padding(start = 12.dp, top = 2.dp, bottom = 2.dp, end = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(s.title.ifBlank { "Yeni sohbet" }, Modifier.weight(1f), maxLines = 1, fontSize = 13.sp)
+                            if (hov) {
+                                IBtn(onClick = {
+                                    Store.deleteSession(s.id)
+                                    if (current == s.id) current = null
+                                }, tooltip = "Sohbeti sil", danger = true) {
+                                    Icon(Icons.Outlined.Delete, contentDescription = "Sil", modifier = Modifier.size(18.dp))
+                                }
+                            } else {
+                                Spacer(Modifier.height(42.dp))
                             }
-                            .padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(s.title, Modifier.weight(1f), maxLines = 1, fontSize = 13.sp)
-                        TextButton(onClick = {
-                            Store.deleteSession(s.id)
-                            if (current == s.id) current = null
-                        }) { Text("Sil", fontSize = 12.sp) }
+                        }
                     }
                 }
+                ListScrollbar(sessState, Modifier.align(Alignment.CenterEnd))
             }
         }
 
         Column(Modifier.weight(1f).fillMaxHeight().padding(16.dp)) {
-            val msgs = current?.let { id -> Store.messages.filter { it.sessionId == id }.sortedBy { it.createdAt } }.orEmpty()
-            Text("Asistan", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+            val msgs = current
+                ?.let { id -> Store.messages.filter { it.sessionId == id && !it.text.startsWith("Hata:") }.sortedBy { it.createdAt } }
+                .orEmpty()
+            Text("Asistan", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = cs.primary)
             Text("Notlarına dayanarak soru sorabilirsin.", fontSize = 13.sp, color = muted)
             Spacer(Modifier.height(10.dp))
-            if (msgs.isEmpty()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(
-                        "Son notlarımdan kısa bir özet çıkar",
-                        "Hangi konularda eksiğim var?",
-                        "Notlarımdaki kodlardan bir quiz hazırla",
-                    ).forEach { s ->
-                        OutlinedButton(onClick = { send(s) }) { Text(s, fontSize = 12.sp) }
+
+            val chatState = rememberLazyListState()
+            LaunchedEffect(msgs.size, busy) {
+                val total = msgs.size + if (busy) 1 else 0
+                if (total > 0) chatState.animateScrollToItem(total - 1)
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                if (msgs.isEmpty() && !busy) {
+                    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                        EmptyState("Ne öğrenmek istersin?", "Notlarına bakarak yanıt veririm. Bir öneriyle başla:", symbol = "✦")
+                        Spacer(Modifier.height(4.dp))
+                        listOf(
+                            "Son notlarımdan kısa bir özet çıkar",
+                            "Hangi konularda eksiğim var?",
+                            "Notlarımdaki kodlardan bir quiz hazırla",
+                        ).forEach { sug ->
+                            SButton(onClick = { send(sug) }, compact = true, shape = RoundedCornerShape(50), modifier = Modifier.padding(vertical = 3.dp)) { Text(sug) }
+                        }
+                    }
+                } else {
+                    LazyColumn(Modifier.fillMaxSize().padding(end = 8.dp), state = chatState, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(msgs, key = { it.id }) { m ->
+                            val mine = m.role == "user"
+                            Row(Modifier.animateItem().fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
+                                Column(
+                                    Modifier
+                                        .widthIn(max = 720.dp)
+                                        .clip(RoundedCornerShape(18.dp))
+                                        .background(if (mine) cs.primary.copy(alpha = 0.16f) else cs.surface)
+                                        .border(1.dp, if (mine) Color.Transparent else Color(0x14000000), RoundedCornerShape(18.dp))
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(if (mine) "Sen" else "Asistan", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = muted, modifier = Modifier.weight(1f, fill = false))
+                                        if (!mine) {
+                                            Spacer(Modifier.width(8.dp))
+                                            GButton(onClick = {
+                                                Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(m.text), null)
+                                            }) { Text("Kopyala", fontSize = 11.sp) }
+                                        }
+                                    }
+                                    SelectionContainer { Text(m.text, fontSize = 14.sp, lineHeight = 21.sp) }
+                                }
+                            }
+                        }
+                        if (busy) {
+                            item {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 6.dp)) {
+                                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Düşünüyor…", color = muted, fontSize = 13.sp)
+                                }
+                            }
+                        }
                     }
                 }
             }
-            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(msgs) { m ->
-                    val mine = m.role == "user"
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .background(if (mine) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface)
-                            .padding(12.dp),
-                    ) {
-                        Text(if (mine) "Sen" else "Asistan", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = muted)
-                        Text(m.text, fontSize = 14.sp)
-                    }
-                }
-                if (busy) {
-                    item { Text("Düşünüyor…", color = muted, fontSize = 13.sp) }
-                }
-            }
+
             if (error.isNotBlank()) {
-                Text(error, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(cs.error.copy(alpha = 0.10f))
+                        .padding(start = 14.dp, top = 6.dp, bottom = 6.dp, end = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(error, color = cs.error, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    failed?.let { f ->
+                        Spacer(Modifier.width(8.dp))
+                        SButton(onClick = { ask(f.first, f.second) }, enabled = !busy, compact = true, danger = true) { Text("Tekrar dene") }
+                    }
+                }
             }
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
@@ -155,7 +259,7 @@ fun AssistantPane(modifier: Modifier) {
                     },
                 )
                 Spacer(Modifier.width(8.dp))
-                Button(onClick = { send(input) }, enabled = !busy && input.isNotBlank()) { Text("Gönder") }
+                PButton(onClick = { send(input) }, enabled = !busy && input.isNotBlank()) { Text("Gönder") }
             }
         }
     }

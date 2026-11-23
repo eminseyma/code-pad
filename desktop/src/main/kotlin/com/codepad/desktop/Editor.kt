@@ -1,5 +1,14 @@
 package com.codepad.desktop
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material3.Icon
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.SolidColor
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -31,7 +40,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clip
@@ -63,6 +71,13 @@ fun EditorPane(noteId: String) {
     var title by remember(noteId) { mutableStateOf(note.title) }
     var body by remember(noteId) { mutableStateOf(TextFieldValue(note.content)) }
     var busy by remember { mutableStateOf(false) }
+    var copied by remember(noteId) { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1500)
+            copied = false
+        }
+    }
     var error by remember { mutableStateOf("") }
     var result by remember { mutableStateOf<AiResult?>(null) }
     var showCustom by remember { mutableStateOf(false) }
@@ -104,36 +119,45 @@ fun EditorPane(noteId: String) {
     Column(Modifier.fillMaxSize()) {
         // Başlık + paylaş
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = title,
-                onValueChange = {
-                    title = it
-                    Store.updateNote(note.id, it, body.text)
-                },
-                singleLine = true,
-                label = { Text("Başlık") },
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(8.dp))
-            OutlinedButton(onClick = {
+            Box(Modifier.weight(1f).padding(vertical = 4.dp)) {
+                if (title.isEmpty()) {
+                    Text("Başlıksız not", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = Muted.copy(alpha = 0.5f))
+                }
+                BasicTextField(
+                    value = title,
+                    onValueChange = {
+                        title = it
+                        Store.updateNote(note.id, it, body.text)
+                    },
+                    singleLine = true,
+                    textStyle = TextStyle(fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            IBtn(onClick = {
                 val text = (if (title.isBlank()) "Not" else title) + "\n\n" + body.text
                 Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null)
-            }) { Text("Paylaş (kopyala)") }
-            TextButton(onClick = {
-                Store.deleteNote(note.id)
-            }) { Text("Sil") }
+                copied = true
+            }, tooltip = if (copied) "Kopyalandı ✓" else "Notu kopyala (paylaş)") {
+                Icon(if (copied) Icons.Outlined.Check else Icons.Outlined.ContentCopy, contentDescription = "Kopyala")
+            }
+            IBtn(onClick = { Store.deleteNote(note.id) }, tooltip = "Notu sil", danger = true) {
+                Icon(Icons.Outlined.Delete, contentDescription = "Sil")
+            }
         }
 
         // AI eylemleri
         Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             Store.actions.forEach { a ->
-                OutlinedButton(onClick = { runAi(a.label, a.instruction) }, enabled = !busy) { Text(a.label, fontSize = 13.sp) }
+                SButton(onClick = { runAi(a.label, a.instruction) }, enabled = !busy, compact = true, shape = RoundedCornerShape(50)) { Text(a.label) }
             }
-            OutlinedButton(onClick = { showCustom = true }, enabled = !busy) { Text("Özel istek", fontSize = 13.sp) }
+            SButton(onClick = { showCustom = true }, enabled = !busy, compact = true, shape = RoundedCornerShape(50)) { Text("✦ Özel istek") }
             if (busy) {
                 Spacer(Modifier.width(6.dp))
                 CircularProgressIndicator(Modifier.height(20.dp).width(20.dp), strokeWidth = 2.dp)
+                Text("Düşünüyor…", fontSize = 12.sp, color = Muted)
             }
         }
         if (error.isNotBlank()) {
@@ -179,7 +203,7 @@ fun EditorPane(noteId: String) {
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
+                GButton(onClick = {
                     saveBody(TextFieldValue(body.text.trimEnd() + "\n\n" + r.text + "\n"))
                     result = null
                 }) { Text("Nota ekle") }
@@ -187,19 +211,19 @@ fun EditorPane(noteId: String) {
             dismissButton = {
                 Row {
                     if (r.hadSelection) {
-                        TextButton(onClick = {
+                        GButton(onClick = {
                             val t = body.text
                             val merged = t.substring(0, r.selStart) + r.text + t.substring(r.selEnd)
                             saveBody(TextFieldValue(merged, TextRange(r.selStart + r.text.length)))
                             result = null
                         }) { Text("Seçimin yerine koy") }
                     }
-                    TextButton(onClick = {
+                    GButton(onClick = {
                         pendingCardText = r.text
                         sectionText = ""
                         result = null
                     }) { Text("Karta ekle") }
-                    TextButton(onClick = { result = null }) { Text("Kapat") }
+                    GButton(onClick = { result = null }) { Text("Kapat") }
                 }
             },
         )
@@ -220,7 +244,7 @@ fun EditorPane(noteId: String) {
                 )
             },
             confirmButton = {
-                TextButton(
+                GButton(
                     enabled = customText.isNotBlank(),
                     onClick = {
                         val instr = customText.trim()
@@ -229,7 +253,7 @@ fun EditorPane(noteId: String) {
                     },
                 ) { Text("Çalıştır") }
             },
-            dismissButton = { TextButton(onClick = { showCustom = false }) { Text("Vazgeç") } },
+            dismissButton = { GButton(onClick = { showCustom = false }) { Text("Vazgeç") } },
         )
     }
 
@@ -280,12 +304,12 @@ private fun CardsPanel(noteId: String, onAppend: (String) -> Unit, onMove: (Stri
                         Text(c.title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                         Text(c.body, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 4)
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            TextButton(onClick = { onAppend(c.body) }) { Text("Nota ekle", fontSize = 12.sp) }
-                            TextButton(onClick = { onMove(c.id, c.section) }) { Text("Bölüm", fontSize = 12.sp) }
-                            TextButton(onClick = {
+                            GButton(onClick = { onAppend(c.body) }) { Text("Nota ekle", fontSize = 12.sp) }
+                            GButton(onClick = { onMove(c.id, c.section) }) { Text("Bölüm", fontSize = 12.sp) }
+                            GButton(onClick = {
                                 Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(c.body), null)
                             }) { Text("Kopyala", fontSize = 12.sp) }
-                            TextButton(onClick = { Store.deleteCard(c.id) }) { Text("Sil", fontSize = 12.sp) }
+                            GButton(onClick = { Store.deleteCard(c.id) }) { Text("Sil", fontSize = 12.sp) }
                         }
                     }
                 }
@@ -309,8 +333,8 @@ private fun SectionDialog(title: String, initial: String, confirmLabel: String, 
                 modifier = Modifier.width(360.dp),
             )
         },
-        confirmButton = { TextButton(onClick = { onConfirm(section.trim()) }) { Text(confirmLabel) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } },
+        confirmButton = { GButton(onClick = { onConfirm(section.trim()) }) { Text(confirmLabel) } },
+        dismissButton = { GButton(onClick = onDismiss) { Text("Vazgeç") } },
     )
 }
 

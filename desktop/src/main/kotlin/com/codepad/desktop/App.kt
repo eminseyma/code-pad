@@ -1,6 +1,16 @@
 package com.codepad.desktop
 
 import androidx.compose.foundation.background
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -111,7 +121,7 @@ fun coverBg(key: String): Color = when (key) {
 
 @Composable
 fun App() {
-    MaterialTheme(colorScheme = schemeFor(Store.theme)) {
+    MaterialTheme(colorScheme = schemeFor(Store.theme), shapes = AppShapes) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             var loggedIn by remember { mutableStateOf(Store.hasSession) }
             if (loggedIn) {
@@ -173,7 +183,7 @@ fun LoginView(onDone: () -> Unit) {
             Text(error, color = MaterialTheme.colorScheme.error, fontSize = 13.sp, modifier = Modifier.width(340.dp))
             Spacer(Modifier.height(6.dp))
         }
-        Button(
+        PButton(
             onClick = {
                 busy = true
                 error = ""
@@ -196,11 +206,11 @@ fun LoginView(onDone: () -> Unit) {
             modifier = Modifier.width(340.dp),
         ) { Text(if (create) "Hesap oluştur" else "Giriş yap", fontWeight = FontWeight.Bold) }
         Row {
-            TextButton(onClick = { create = !create }) {
+            GButton(onClick = { create = !create }) {
                 Text(if (create) "Zaten hesabım var" else "Hesabım yok, oluştur")
             }
             if (!create) {
-                TextButton(onClick = { showReset = true }) { Text("Şifremi unuttum") }
+                GButton(onClick = { showReset = true }) { Text("Şifremi unuttum") }
             }
         }
     }
@@ -251,7 +261,7 @@ private fun ResetDialog(initialEmail: String, onDismiss: () -> Unit, onDone: () 
             }
         },
         confirmButton = {
-            TextButton(
+            GButton(
                 enabled = !busy && (!sent && email.isNotBlank() || sent && code.isNotBlank() && newPass.length >= 6),
                 onClick = {
                     busy = true
@@ -279,7 +289,7 @@ private fun ResetDialog(initialEmail: String, onDismiss: () -> Unit, onDone: () 
                 },
             ) { Text(if (!sent) "Kod gönder" else "Şifreyi değiştir") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } },
+        dismissButton = { GButton(onClick = onDismiss) { Text("Vazgeç") } },
     )
 }
 
@@ -342,11 +352,24 @@ fun Workspace(onLogout: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(12.dp))
-            val pillBg = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
             @Composable
             fun Pill(label: String, hint: String = "", onClick: () -> Unit) {
+                val src = remember { MutableInteractionSource() }
+                val hov by src.collectIsHoveredAsState()
+                val prs by src.collectIsPressedAsState()
+                val pillBg by animateColorAsState(
+                    MaterialTheme.colorScheme.primary.copy(alpha = if (prs) 0.22f else if (hov) 0.15f else 0.08f),
+                    tween(130),
+                )
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(pillBg).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 9.dp),
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(pillBg)
+                        .hoverable(src)
+                        .pointerHoverIcon(PointerIcon.Hand)
+                        .clickable(interactionSource = src, indication = null, onClick = onClick)
+                        .padding(horizontal = 12.dp, vertical = 9.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
@@ -363,19 +386,28 @@ fun Workspace(onLogout: () -> Unit) {
             Text("DEFTERLER", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = muted)
             Spacer(Modifier.height(8.dp))
             LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(nbs) { item ->
+                items(nbs, key = { it.id }) { item ->
                     val active = item.id == currentNb && mode == "notes"
                     val bg = coverBg(item.cover)
                     val dark = bg.luminance() < 0.4f
                     val fg = if (dark) Color.White else Color(0xFF1E4D39)
                     val count = Store.notes.count { it.nbId == item.id && !it.deleted }
+                    val tsrc = remember { MutableInteractionSource() }
+                    val borderC by animateColorAsState(
+                        if (active) MaterialTheme.colorScheme.primary else Color.Transparent,
+                        tween(180),
+                    )
                     Box(
                         Modifier
+                            .animateItem()
                             .fillMaxWidth()
+                            .hoverScale(tsrc)
                             .clip(RoundedCornerShape(16.dp))
                             .background(bg)
-                            .then(if (active) Modifier.border(2.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp)) else Modifier)
-                            .clickable {
+                            .border(2.5.dp, borderC, RoundedCornerShape(16.dp))
+                            .hoverable(tsrc)
+                            .pointerHoverIcon(PointerIcon.Hand)
+                            .clickable(interactionSource = tsrc, indication = null) {
                                 selNb = item.id
                                 selNote = null
                                 mode = "notes"
@@ -402,7 +434,7 @@ fun Workspace(onLogout: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(8.dp))
-            OutlinedButton(
+            SButton(
                 onClick = {
                     val n = Store.addNotebook("Yeni defter")
                     selNb = n.id
@@ -414,63 +446,88 @@ fun Workspace(onLogout: () -> Unit) {
             ) { Text("+ Yeni defter", fontWeight = FontWeight.Bold) }
         }
 
-        if (mode == "assistant") {
-            AssistantPane(Modifier.weight(1f).fillMaxHeight())
-        } else {
-            // Orta: not listesi
-            Column(Modifier.width(300.dp).fillMaxHeight().padding(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        nb?.name ?: "Defter yok",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                    )
-                    if (nb != null) {
-                        IconButton(onClick = { showStyle = true }) {
-                            Icon(Icons.Outlined.Palette, contentDescription = "Görünüm", tint = muted)
+        Crossfade(targetState = mode, modifier = Modifier.weight(1f).fillMaxHeight(), animationSpec = tween(200)) { m ->
+            if (m == "assistant") {
+                AssistantPane(Modifier.fillMaxSize())
+            } else {
+                Row(Modifier.fillMaxSize()) {
+                    // Orta: not listesi
+                    Column(Modifier.width(300.dp).fillMaxHeight().padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                nb?.name ?: "Defter yok",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                            )
+                            if (nb != null) {
+                                IBtn(onClick = { showStyle = true }, tooltip = "Defter görünümü") {
+                                    Icon(Icons.Outlined.Palette, contentDescription = "Görünüm")
+                                }
+                                IBtn(onClick = {
+                                    Store.deleteNotebook(nb.id)
+                                    selNb = null
+                                    selNote = null
+                                }, tooltip = "Defteri sil", danger = true) {
+                                    Icon(Icons.Outlined.Delete, contentDescription = "Defteri sil")
+                                }
+                            }
                         }
-                        IconButton(onClick = {
-                            Store.deleteNotebook(nb.id)
-                            selNb = null
-                            selNote = null
-                        }) {
-                            Icon(Icons.Outlined.Delete, contentDescription = "Defteri sil", tint = MaterialTheme.colorScheme.error)
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = query,
+                            onValueChange = { query = it },
+                            singleLine = true,
+                            label = { Text("Ara (Ctrl+F)") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        PButton(
+                            onClick = { currentNb?.let { selNote = Store.addNote(it).id } },
+                            enabled = currentNb != null,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("+ Yeni not  (Ctrl+N)") }
+                        Spacer(Modifier.height(8.dp))
+                        val list = currentNb?.let { Store.notesIn(it) }.orEmpty()
+                            .filter { query.isBlank() || it.title.contains(query, true) || it.content.contains(query, true) }
+                        if (list.isEmpty()) {
+                            EmptyState(
+                                if (query.isBlank()) "Bu defter boş" else "Sonuç yok",
+                                if (query.isBlank()) "İlk notunu eklemek için yukarıdaki düğmeye bas." else "Başka bir sözcük dene.",
+                                Modifier.weight(1f).fillMaxWidth(),
+                                symbol = if (query.isBlank()) "+" else "?",
+                            )
+                        } else {
+                            val listState = rememberLazyListState()
+                            Box(Modifier.weight(1f)) {
+                                LazyColumn(Modifier.fillMaxSize().padding(end = 8.dp), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    items(list, key = { it.id }) { n ->
+                                        NoteCardDesk(n, n.id == selNote, Modifier.animateItem()) { selNote = n.id }
+                                    }
+                                }
+                                ListScrollbar(listState, Modifier.align(Alignment.CenterEnd))
+                            }
                         }
                     }
-                }
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    singleLine = true,
-                    label = { Text("Ara (Ctrl+F)") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick = { currentNb?.let { selNote = Store.addNote(it).id } },
-                    enabled = currentNb != null,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("+ Yeni not (Ctrl+N)") }
-                Spacer(Modifier.height(8.dp))
-                val list = currentNb?.let { Store.notesIn(it) }.orEmpty()
-                    .filter { query.isBlank() || it.title.contains(query, true) || it.content.contains(query, true) }
-                LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(list) { n ->
-                        NoteCardDesk(n, n.id == selNote) { selNote = n.id }
-                    }
-                }
-            }
 
-            // Sağ: editör
-            Column(Modifier.weight(1f).fillMaxHeight().padding(16.dp)) {
-                val selected = selNote?.let { id -> Store.notes.firstOrNull { it.id == id && !it.deleted } }
-                if (selected == null) {
-                    Text("Bir not seç ya da yeni not oluştur.", color = muted)
-                } else {
-                    EditorPane(selected.id)
+                    // Sağ: editör
+                    val selectedId = selNote?.takeIf { id -> Store.notes.any { it.id == id && !it.deleted } }
+                    Crossfade(
+                        targetState = selectedId,
+                        modifier = Modifier.weight(1f).fillMaxHeight().padding(16.dp),
+                        animationSpec = tween(160),
+                    ) { id ->
+                        if (id == null) {
+                            EmptyState(
+                                "Bir not seç",
+                                "Soldan bir not aç ya da Ctrl+N ile yenisini oluştur.",
+                                Modifier.fillMaxSize(),
+                            )
+                        } else {
+                            EditorPane(id)
+                        }
+                    }
                 }
             }
         }
@@ -515,12 +572,12 @@ private fun StyleDialog(nb: Nb, onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            GButton(onClick = {
                 Store.setNotebookStyle(nb.id, cover, page)
                 onDismiss()
             }) { Text("Kaydet") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } },
+        dismissButton = { GButton(onClick = onDismiss) { Text("Vazgeç") } },
     )
 }
 
@@ -574,7 +631,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     label = { Text("Model adı") },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Button(onClick = {
+                PButton(onClick = {
                     Store.apiKey = key.trim()
                     Store.model = model.trim().ifBlank { DefaultModel }
                     Store.save()
@@ -589,16 +646,16 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                             Text(a.label, fontWeight = FontWeight.Bold)
                             Text(a.instruction, fontSize = 12.sp, color = muted, maxLines = 2)
                         }
-                        TextButton(onClick = { editing = a }) { Text("Düzenle", fontSize = 12.sp) }
-                        TextButton(onClick = {
+                        GButton(onClick = { editing = a }) { Text("Düzenle", fontSize = 12.sp) }
+                        GButton(onClick = {
                             Store.actions.remove(a)
                             Store.save()
                         }) { Text("Sil", fontSize = 12.sp) }
                     }
                 }
                 Row {
-                    TextButton(onClick = { creating = true }) { Text("+ Yeni eylem") }
-                    TextButton(onClick = {
+                    GButton(onClick = { creating = true }) { Text("+ Yeni eylem") }
+                    GButton(onClick = {
                         Store.actions.clear()
                         Store.actions.addAll(DefaultActions)
                         Store.save()
@@ -612,7 +669,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     Switch(checked = includeKey, onCheckedChange = { includeKey = it })
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = {
+                    PButton(onClick = {
                         val path = pickFile(save = true)
                         if (path != null) {
                             status = runCatching {
@@ -621,7 +678,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                             }.getOrElse { "Kaydedilemedi: ${it.message}" }
                         }
                     }) { Text("Yedek dosyası oluştur", fontSize = 13.sp) }
-                    OutlinedButton(onClick = {
+                    SButton(onClick = {
                         val path = pickFile(save = false)
                         if (path != null) pendingRestore = path
                     }) { Text("Yedek dosyasından yükle", fontSize = 13.sp) }
@@ -629,7 +686,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                 if (status.isNotBlank()) Text(status, fontSize = 12.sp, color = muted)
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Kapat") } },
+        confirmButton = { GButton(onClick = onDismiss) { Text("Kapat") } },
     )
 
     if (creating) {
@@ -661,7 +718,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
             title = { Text("Yedekten yüklensin mi?") },
             text = { Text("Bu bilgisayardaki tüm notlar, kartlar ve sohbetler dosyadaki yedekle değiştirilir.") },
             confirmButton = {
-                TextButton(onClick = {
+                GButton(onClick = {
                     status = runCatching {
                         Backup.restore(File(path).readText(Charsets.UTF_8))
                         "Yedek yüklendi."
@@ -669,7 +726,7 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                     pendingRestore = null
                 }) { Text("Yükle") }
             },
-            dismissButton = { TextButton(onClick = { pendingRestore = null }) { Text("Vazgeç") } },
+            dismissButton = { GButton(onClick = { pendingRestore = null }) { Text("Vazgeç") } },
         )
     }
 }
@@ -688,12 +745,12 @@ private fun ActionDialog(initial: AiAction?, onDismiss: () -> Unit, onSave: (Str
             }
         },
         confirmButton = {
-            TextButton(
+            GButton(
                 onClick = { onSave(label.trim(), instruction.trim()) },
                 enabled = label.isNotBlank() && instruction.isNotBlank(),
             ) { Text("Kaydet") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } },
+        dismissButton = { GButton(onClick = onDismiss) { Text("Vazgeç") } },
     )
 }
 

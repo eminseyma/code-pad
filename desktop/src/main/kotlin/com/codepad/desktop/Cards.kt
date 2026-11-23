@@ -1,5 +1,14 @@
 package com.codepad.desktop
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -72,21 +81,35 @@ fun NoteBadgeDesk(content: String) {
     }
 }
 
-/** Not listesindeki yuvarlak kart (telefondaki NoteRow ile aynı düzen). */
+/** Not listesindeki yuvarlak kart (telefondaki NoteRow ile aynı düzen); üzerine gelince canlanır. */
 @Composable
-fun NoteCardDesk(n: Nt, active: Boolean, onClick: () -> Unit) {
-    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+fun NoteCardDesk(n: Nt, active: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val muted = cs.onSurfaceVariant
+    val src = remember { MutableInteractionSource() }
+    val hov by src.collectIsHoveredAsState()
+    val bg by animateColorAsState(
+        when {
+            active -> cs.primary.copy(alpha = 0.12f)
+            hov -> cs.primary.copy(alpha = 0.06f)
+            else -> cs.surface
+        },
+        tween(140),
+    )
+    val border by animateColorAsState(
+        if (active) cs.primary.copy(alpha = 0.55f) else if (hov) cs.primary.copy(alpha = 0.30f) else Color(0x1A000000),
+        tween(140),
+    )
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
+            .hoverScale(src, 1.012f)
             .clip(RoundedCornerShape(16.dp))
-            .background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surface)
-            .border(
-                1.dp,
-                if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else Color(0x1A000000),
-                RoundedCornerShape(16.dp),
-            )
-            .clickable(onClick = onClick)
+            .background(bg)
+            .border(1.dp, border, RoundedCornerShape(16.dp))
+            .hoverable(src)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .clickable(interactionSource = src, indication = null, onClick = onClick)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -96,7 +119,7 @@ fun NoteCardDesk(n: Nt, active: Boolean, onClick: () -> Unit) {
             Text(
                 n.title.ifBlank { "Başlıksız not" },
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = cs.onSurface,
                 maxLines = 1,
             )
             Text(

@@ -1,5 +1,6 @@
 package com.codepad.desktop
 
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.res.loadImageBitmap
 import androidx.compose.ui.unit.dp
@@ -14,5 +15,8 @@ fun main() = application {
         title = "Code Pad",
         icon = icon,
         state = rememberWindowState(width = 1120.dp, height = 740.dp),
-    ) { App() }
+    ) {
+        LaunchedEffect(Unit) { window.minimumSize = java.awt.Dimension(960, 640) }
+        App()
+    }
 }

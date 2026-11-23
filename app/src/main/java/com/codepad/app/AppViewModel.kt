@@ -408,7 +408,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 if (context.isEmpty()) append("(ilgili not bulunamadı)")
                 context.forEach { append("### ${it.title.ifBlank { "Başlıksız" }}\n${it.content.take(1_500)}\n\n") }
             }
-            val result = GeminiClient.generate(apiKey, model, system, chat.toList())
+            val result = GeminiClient.generate(apiKey, model, system, chat.filterNot { it.text.startsWith("Hata:") })
             val reply = result.getOrElse { "Hata: ${it.message}" }
             chat += ChatMessage("model", reply)
             dao.insertMessage(SavedMessage(sessionId = sid, role = "model", text = reply))

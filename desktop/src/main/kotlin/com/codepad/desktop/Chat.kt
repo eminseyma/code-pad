@@ -54,7 +54,7 @@ object Assistant {
             context.forEach { append("### ${it.title.ifBlank { "Başlıksız" }}\n${it.content.take(1_500)}\n\n") }
         }
         val history = Store.messages
-            .filter { it.sessionId == sessionId }
+            .filter { it.sessionId == sessionId && !it.text.startsWith("Hata:") }
             .sortedBy { it.createdAt }
             .map { ChatMessage(if (it.role == "user") "user" else "model", it.text) }
         return GeminiClient.generate(Store.apiKey, Store.model, system, history)
